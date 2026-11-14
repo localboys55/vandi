@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Vandi — Kerala & Tamil Nadu Roads</title>
+<meta name="theme-color" content="#0f3b2e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+@font-face{font-family:"Baloo Chettan 2";font-weight:600;src:url(fonts/baloo-chettan-2-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:700;src:url(fonts/baloo-chettan-2-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:800;src:url(fonts/baloo-chettan-2-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:600;src:url(fonts/baloo-chettan-2-malayalam-600-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Chettan 2";font-weight:700;src:url(fonts/baloo-chettan-2-malayalam-700-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Chettan 2";font-weight:800;src:url(fonts/baloo-chettan-2-malayalam-800-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:600;src:url(fonts/baloo-thambi-2-tamil-600-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:700;src:url(fonts/baloo-thambi-2-tamil-700-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:800;src:url(fonts/baloo-thambi-2-tamil-800-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+:root{--cream:#f6efd9;--gold:#c9a227;--gold2:#f4d03f;--green:#0f3b2e;--leaf:#2f7d32;--ink:#1c1a14;--mari:#f5a623;--red:#e74c3c;--teal:#19c3b8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#0b1626;font-family:"Baloo Chettan 2","Baloo Thambi 2",system-ui,sans-serif;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+.small{font-size:13px;opacity:.85}
+.native{font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif;color:#7a5c00}
+.btn{font:700 16px/1 inherit;font-family:inherit;padding:11px 18px;border-radius:12px;border:2px solid #8a6d12;background:linear-gradient(#ffd15c,#f5a623);color:#2b1d00;cursor:pointer;box-shadow:0 3px 0 #8a6d12}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 #8a6d12}
+.btn:disabled{opacity:.45;filter:grayscale(.6)}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:none}
+.btn.small{padding:7px 12px;font-size:14px}
+.panel{background:rgba(246,239,217,.94);border:2px solid var(--gold);outline:2px solid rgba(201,162,39,.35);outline-offset:2px;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+/* screens */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(180deg,rgba(15,59,46,.55),rgba(11,22,38,.85));z-index:20;overflow:auto}
+.card{background:var(--cream);border:3px solid var(--gold);outline:3px solid rgba(201,162,39,.45);outline-offset:4px;border-radius:18px;padding:20px 22px;max-width:520px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.45);max-height:92vh;overflow:auto}
+.logo{font-weight:800;font-size:46px;line-height:1;color:var(--green);letter-spacing:.5px}
+.logo{font-family:"Baloo Thambi 2","Baloo Chettan 2",sans-serif;font-size:40px;line-height:1.05;color:#b7770a;text-shadow:0 0 1px #000}
+.logo .ml{font-family:"Baloo Chettan 2",sans-serif;color:#0a7c74}
+.logoBox{display:flex;gap:14px;align-items:center}.logoBox img{width:84px;height:84px;border-radius:18px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.logoBox small{display:block;font-size:14px;color:#7a5c00;font-weight:700;margin-top:2px}
+.tagline{margin:8px 0 14px;font-size:15px}
+.acct{display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 14px;margin:6px 0;border-radius:12px;border:2px solid var(--gold);background:#fffaf0;font:inherit;cursor:pointer;text-align:left}
+.acct span{font-size:13px;opacity:.8}
+.field{display:block;margin:8px 0;font-weight:600;font-size:14px}
+.field input,.field select,textarea,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:2px solid #d8c88c;background:#fff;margin-top:3px}
+textarea{font-family:"Share Tech Mono",monospace;font-size:11px;resize:none;user-select:text;-webkit-user-select:text}
+.err{color:#b03a2e;font-size:13px;min-height:18px}
+hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:8px 0}
+.row select{width:auto}
+/* HUD */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+#hud button{pointer-events:auto}
+#topL{position:absolute;left:max(10px,env(safe-area-inset-left));top:10px;display:flex;flex-direction:column;gap:8px;width:250px}
+#meter{padding:8px 12px}
+.mrow{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;letter-spacing:1px}
+.led{width:10px;height:10px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.led.vac{background:#2ecc40;color:#2ecc40}.led.hired{background:#ff3b30;color:#ff3b30}
+#fare{font-family:"Share Tech Mono",monospace;font-size:30px;color:#c0392b;background:#1a1510;border-radius:8px;padding:2px 10px;margin:4px 0;text-shadow:0 0 6px rgba(255,60,40,.6)}
+#fareSub{font-size:12px;line-height:1.2}
+#moneyBox{padding:6px 12px;display:flex;justify-content:space-between;align-items:center}
+#money{font-weight:800;font-size:22px;color:var(--green)}
+#stars{font-size:20px;color:#9a9a9a;letter-spacing:1px}
+#stars.on{color:#ff3b30;animation:blink .6s infinite}
+@keyframes blink{50%{color:#0a84ff}}
+#vehTxt{font-size:12px;padding:4px 10px}
+#topC{position:absolute;left:50%;top:10px;transform:translateX(-50%);text-align:center;padding:5px 14px;min-width:200px}
+#topC b{font-size:18px;margin:0 8px}
+#cityLine{font-size:12px;font-weight:700;color:var(--green)}
+#festTxt{font-size:12px;color:#6c3483;font-weight:700}
+#mapWrap{position:absolute;right:max(10px,env(safe-area-inset-right));top:10px;width:150px}
+#mini{width:150px;height:150px;border-radius:50%;display:block;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.hudBtns{display:flex;gap:6px;justify-content:center;margin-top:6px}
+.hb{width:42px;height:42px;border-radius:50%;border:2px solid var(--gold);background:rgba(246,239,217,.95);font-size:17px;font-weight:800;cursor:pointer}
+#saveTxt{font-size:10px;color:#fff;text-align:center;text-shadow:0 1px 2px #000;margin-top:4px}
+#speedo{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);padding:4px 14px;display:flex;align-items:baseline;gap:6px}
+#spd{font-family:"Share Tech Mono",monospace;font-size:30px}
+#speedo.over #spd{color:#e74c3c}
+#limit{width:30px;height:30px;border-radius:50%;border:4px solid #e74c3c;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;align-self:center}
+#toasts{position:absolute;top:78px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(90vw,460px)}
+.toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
+.toast.good{border-color:#27ae60;color:#145a32}.toast.bad{border-color:#e74c3c;color:#922b21;background:#fff0ee}
+.toast.out{opacity:0;transform:translateY(-8px)}
+#prompt{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);color:#fff;font-weight:800;font-size:17px;text-shadow:0 2px 4px #000;white-space:nowrap}
+#bubble{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);max-width:min(88vw,460px);padding:8px 14px;border-radius:14px}
+#bName{display:block;color:#7a5c00;font-size:13px}#bText{display:block;font-size:17px;font-weight:700}#bEng{display:block;font-size:12px;opacity:.75}
+#actBtn{position:absolute;left:50%;bottom:205px;transform:translateX(-50%);font-size:17px}
+#bubbles{position:absolute;inset:0;overflow:hidden}
+.sb{position:absolute;transform:translate(-50%,-100%);background:#fff;border:3px solid #e74c3c;border-radius:14px;padding:4px 11px;font-weight:800;font-size:15px;white-space:nowrap;color:#222;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
+.sb:after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-8px;border:8px solid transparent;border-top-color:inherit;border-bottom:0}
+.sb.angry,.sb.crash{border-color:#e74c3c;animation:shake .35s 2}.sb.police{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}
+@keyframes shake{25%{margin-left:-3px}75%{margin-left:3px}}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#flash.go{animation:fl .35s}
+@keyframes fl{0%{opacity:.85}100%{opacity:0}}
+/* touch controls */
+#touch{display:none}
+body.touch #touch{display:block}
+#touch .tl,#touch .tr{position:absolute;bottom:max(14px,env(safe-area-inset-bottom));display:flex;gap:12px;align-items:flex-end}
+#touch .tl{left:max(14px,env(safe-area-inset-left))}
+#touch .tr{right:max(14px,env(safe-area-inset-right))}
+#touch button{pointer-events:auto;border:3px solid rgba(201,162,39,.9);background:rgba(246,239,217,.55);border-radius:18px;font:800 18px inherit;font-family:inherit;color:#2b1d00;touch-action:none}
+#touch button.down{background:rgba(245,166,35,.85)}
+#touch .steer{width:78px;height:78px;font-size:28px}
+#touch .gas{width:84px;height:110px;background:rgba(46,204,64,.45)}
+#touch .brake{width:78px;height:84px;background:rgba(231,76,60,.45)}
+#touch .horn{width:56px;height:56px;border-radius:50%;font-size:22px}
+body.touch #speedo{bottom:auto;top:84px}
+body.touch #prompt{bottom:130px}
+body.touch #bubble{bottom:auto;top:130px}
+body.touch #actBtn{bottom:140px}
+/* modal & pause */
+#modal .card h2{margin:0 0 6px;color:var(--green)}
+.tabs{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.tab{font:inherit;font-weight:700;padding:6px 12px;border-radius:10px;border:2px solid var(--gold);background:#fffaf0;cursor:pointer}
+.tab.on{background:var(--mari)}
+.vlist{display:flex;flex-direction:column;gap:6px;max-height:48vh;overflow:auto}
+.vrow{display:flex;align-items:center;gap:10px;background:#fffaf0;border:2px solid #e6d9a8;border-radius:12px;padding:8px}
+.sw{width:30px;height:30px;border-radius:8px;border:4px solid #222;flex:none}
+.vinfo{flex:1;display:flex;flex-direction:column}.vinfo span{font-size:12px;opacity:.8}
+.tag{font-size:12px;font-weight:800;color:#145a32;padding:4px 8px;border:2px solid #27ae60;border-radius:8px}
+.festbox{background:#f4ecf7;border:2px solid #bb8fce;border-radius:10px;padding:8px}
+#modalBtns,#pBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#pBtns .btn{flex:1 1 45%}
+/* state map */
+#mapScreen .card{max-width:900px;display:flex;flex-direction:column;gap:10px;height:92vh}
+#stateMap{width:100%;flex:1;border-radius:12px;min-height:200px;cursor:pointer}
+#cityCard{min-height:70px}
+#cityCard h3{margin:0}
+#loading{z-index:30}
+#loading .card{text-align:center}
+#rotate{display:none}
+@media (orientation:portrait) and (max-width:700px){ body.playing #rotate{display:flex;z-index:40} }
+.keys{font-size:12px;opacity:.75;margin-top:10px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="topL">
+    <div id="moneyBox" class="panel"><span id="money">₹0</span><span id="stars"></span></div>
+    <div id="meter" class="panel">
+      <div class="mrow"><span id="flag" class="led vac"></span><span id="flagTxt">VACANT</span></div>
+      <div id="fare">₹ ---</div>
+      <div id="fareSub"></div>
+    </div>
+    <div id="vehTxt" class="panel"></div>
+  </div>
+  <div id="topC" class="panel">
+    <div><span id="dayTxt">Day 1</span><b id="timeTxt">7:00 AM</b><span id="wx">☀</span></div>
+    <div id="cityLine"><span id="cityTxt"></span> · <span id="cityNt"></span></div>
+    <div id="festTxt"></div>
+  </div>
+  <div id="mapWrap">
+    <canvas id="mini" width="300" height="300"></canvas>
+    <div class="hudBtns"><button class="hb" id="mapBtn" title="State map (M)">🗺</button><button class="hb" id="camBtn" title="Camera (C)">🎥</button><button class="hb" id="pauseBtn" title="Pause (P)">II</button></div>
+    <div class="hudBtns"><button class="hb" id="footBtn" title="Get out (F)">🚶</button></div>
+    <div id="saveTxt"></div>
+  </div>
+  <div id="speedo" class="panel"><b id="spd">0</b><span>km/h</span><div id="limit">50</div></div>
+  <div id="bubbles"></div>
+  <div id="toasts"></div>
+  <div id="prompt"></div>
+  <div id="bubble" class="panel hidden"><b id="bName"></b><span id="bText"></span><span id="bEng"></span></div>
+  <button id="actBtn" class="btn hidden"></button>
+  <div id="flash"></div>
+  <div id="touch">
+    <div class="tl"><button class="steer" data-k="left">◀</button><button class="steer" data-k="right">▶</button></div>
+    <div class="tr"><button class="horn" data-k="horn">📯</button><button class="brake" data-k="brake">BRAKE</button><button class="gas" data-k="gas">GO</button></div>
+  </div>
+</div>
+
+<div id="accScreen" class="screen">
+  <div class="card">
+    <div class="logoBox"><img src="icons/icon-192.png" alt=""><div><div class="logo">வண்டி<br><span class="ml">വണ്ടി</span></div><small>Vandi · Kerala & Tamil Nadu roads</small></div></div>
+    <p class="tagline">Drive autos, taxis, buses and cars through all 52 district headquarters of Kerala and Tamil Nadu. Earn fares, buy better vehicles, and stay ahead of the police.</p>
+    <div id="accList"></div>
+    <hr>
+    <b>Create an account</b>
+    <label class="field">Driver name <input id="newName" maxlength="20" autocomplete="off"></label>
+    <label class="field">4-digit PIN <input id="newPin" maxlength="4" inputmode="numeric" type="password" autocomplete="off"></label>
+    <label class="field">Start in <select id="startCity"></select></label>
+    <div class="err" id="newErr"></div>
+    <div class="row"><button class="btn" id="newGo">Create & play</button><button class="btn ghost hidden" id="installBtn">📲 Install app</button></div>
+    <p class="small">Accounts and progress are saved on this phone. The PIN stops others on the same phone opening your save. It isn't strong security. Settings has a backup code you can use to move your save.</p>
+    <div class="keys">Keyboard: W/↑ go · S/↓ brake · A/D steer · H horn · F get out / in · E action · C camera · M map · P pause. Gamepads work too.</div>
+  </div>
+  <div id="pinBox" class="screen hidden"><div class="card" style="max-width:340px">
+    <b>PIN for <span id="pinFor"></span></b>
+    <label class="field"><input id="pinIn" maxlength="4" inputmode="numeric" type="password" autocomplete="off"></label>
+    <div class="err" id="pinErr"></div>
+    <div class="row"><button class="btn" id="pinGo">Play</button><button class="btn ghost" id="pinCancel">Cancel</button></div>
+  </div></div>
+</div>
+
+<div id="pause" class="screen hidden"><div class="card">
+  <h2 style="margin:0;color:var(--green)">Paused</h2>
+  <p id="pStats" class="small"></p>
+  <div id="pBtns">
+    <button class="btn" id="pResume">Resume</button>
+    <button class="btn" id="pMap">🗺 Travel map</button>
+    <button class="btn" id="pGarage">🔧 My vehicles</button>
+    <button class="btn" id="pSettings">⚙ Settings & backup</button>
+    <button class="btn ghost" id="pLogout">Save & switch account</button>
+  </div>
+  <p class="small">Every city has a car showroom, auto showroom, taxi showroom and bus dealer. Petrol pumps repair damage. Get out (🚶) to walk into temples, churches, mosques and museums.</p>
+</div></div>
+
+<div id="modal" class="screen hidden"><div class="card"><div id="modalBody"></div><div id="modalBtns"></div></div></div>
+
+<div id="mapScreen" class="screen hidden"><div class="card">
+  <div class="row"><b style="font-size:20px;color:var(--green)">Kerala & Tamil Nadu</b><button class="btn small ghost" id="mapClose">✕ Close</button></div>
+  <canvas id="stateMap"></canvas>
+  <div id="cityCard"></div>
+</div></div>
+
+<div id="loading" class="screen hidden"><div class="card"><img src="icons/icon-192.png" alt="" style="width:96px;border-radius:20px"><p id="loadTxt">Loading…</p></div></div>
+<div id="rotate" class="screen"><div class="card" style="text-align:center"><div style="font-size:48px">📱↻</div><b>Turn your phone sideways to drive</b></div></div>
+
+<script src="js/three.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/models.js"></script>
+<script src="js/world.js"></script>
+<script src="js/interiors.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
