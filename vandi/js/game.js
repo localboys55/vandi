@@ -29,7 +29,9 @@ function accounts(){ return store.get(ACC_KEY) || {list:[]}; }
 function defaultSave(name){
   return {v:1, name, money:500, owned:['auto1'], active:'auto1', damage:0, city:'ekm', pos:null, day:1, min:7*60,
     stats:{trips:0, busPax:0, earned:0, fines:0, busts:0, escapes:0, km:0, cities:['ekm']},
-    settings:{gfx: IS_TOUCH ? 'low' : 'high', sound:true, cam:'chase', reactions:true, reactLang:'auto'}, updatedAt:Date.now()};
+    settings:{gfx: IS_TOUCH ? 'low' : 'high', sound:true, cam:'chase', reactions:true, reactLang:'auto', voices:true}, updatedAt:Date.now(),
+    docs: defaultDocs(1), fatigue: 0, reviews: [], rating: {sum: 0, n: 0}, today: {day: 1, earned: 0, fines: 0, trips: 0, night: 0},
+    plate: null, nextCheck: 0};
 }
 let S = null, ACC = null; // current save + account id
 let saveTimer = 0, lastSaveOk = 0;
@@ -41,7 +43,11 @@ function persist(){
   lastSaveOk = ok ? Date.now() : -1;
   const el = $('saveTxt'); if (el) el.textContent = ok ? 'Saved ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Could not save';
 }
-function mergeSave(d){ const base = defaultSave(d.name||'Driver'); const out = Object.assign(base, d); out.stats = Object.assign(base.stats, d.stats||{}); out.settings = Object.assign(defaultSave('x').settings, d.settings||{}); if (!out.owned || !out.owned.length) out.owned=['auto1']; if (!out.owned.includes(out.active)) out.active = out.owned[0]; return out; }
+function mergeSave(d){ const base = defaultSave(d.name||'Driver'); const out = Object.assign(base, d); out.stats = Object.assign(base.stats, d.stats||{}); out.settings = Object.assign(defaultSave('x').settings, d.settings||{}); if (!out.owned || !out.owned.length) out.owned=['auto1']; if (!out.owned.includes(out.active)) out.active = out.owned[0];
+  out.docs = Object.assign(defaultDocs(out.day||1), d.docs||{}); out.rating = out.rating || {sum:0,n:0}; out.reviews = out.reviews || []; out.today = out.today || {day: out.day, earned:0, fines:0, trips:0, night:0};
+  if (!out.plate) { const c = cityById(out.city); const code = c.st === 'KL' ? 'KL ' + (KL_RTO[c.id]||'07') : 'TN ' + String(10 + (hashStr(c.id) % 89)); out.plate = code + ' ' + String.fromCharCode(65+Math.floor(Math.random()*26)) + String.fromCharCode(65+Math.floor(Math.random()*26)) + ' ' + (1000 + Math.floor(Math.random()*9000)); }
+  return out; }
+function earn(n, isNight){ S.money += n; S.stats.earned += n; if (S.today.day !== S.day) S.today = {day:S.day, earned:0, fines:0, trips:0, night:0}; S.today.earned += n; if (isNight) S.today.night += n; }
 
 // ============ Three.js setup ============
 let renderer, scene, camera, hemi, sun, headLight, rainLines, skyColor = new THREE.Color();
@@ -64,6 +70,13 @@ function initThree(){
   hemi = new THREE.HemisphereLight(0xdfefff, 0x5a6b3a, 0.65); scene.add(hemi);
   sun = new THREE.DirectionalLight(0xfff1d6, 0.85); sun.position.set(200,300,120); scene.add(sun); scene.add(sun.target);
   scene.fog = new THREE.Fog(0x9fd3f0, 160, 700);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25;
+  sun.shadow.mapSize.set(2048, 2048); const sc = sun.shadow.camera; sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70; sc.near = 10; sc.far = 700; sun.shadow.bias = -0.0008;
+  // gradient sky dome
+  const skyMat = new THREE.ShaderMaterial({uniforms:{top:{value:new THREE.Color(0x5aa8e6)}, bot:{value:new THREE.Color(0xdcefff)}}, side:THREE.BackSide, depthWrite:false, fog:false,
+    vertexShader:'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader:'uniform vec3 top; uniform vec3 bot; varying vec3 vP; void main(){ float h = clamp(normalize(vP).y*1.6+0.08,0.0,1.0); gl_FragColor = vec4(mix(bot, top, pow(h,0.7)),1.0); }'});
+  window.SKY = new THREE.Mesh(new THREE.SphereGeometry(1400, 24, 12), skyMat); SKY.renderOrder = -1; scene.add(SKY);
   headLight = new THREE.SpotLight(0xfff3c4, 0, 70, 0.6, 0.5, 1.2); scene.add(headLight); scene.add(headLight.target);
   // rain
   const n = 1400, pos = new Float32Array(n*6);
@@ -81,6 +94,12 @@ function applyGfx(){
   const hi = S && S.settings.gfx === 'high';
   renderer.setPixelRatio(Math.min(devicePixelRatio, hi ? 2 : 1));
   renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = !!hi; if (sun) sun.castShadow = !!hi;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+}
+function enableShadows(){
+  if (!W || !S || S.settings.gfx !== 'high') return;
+  W.group.traverse(o => { if (o.isInstancedMesh || o.isMesh) { o.castShadow = o.geometry.type !== 'PlaneGeometry'; o.receiveShadow = true; } });
 }
 function onResize(){ if (!renderer) return; renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); }
 const BEAM_GEO = new THREE.CylinderGeometry(1.5,1.5,26,16,1,true).translate(0,13,0);
@@ -98,7 +117,7 @@ function disposeTown(){
   if (PROC) PROC.members.forEach(m => scene.remove(m.mesh));
   if (INTERIOR) { scene.remove(INTERIOR.group); INTERIOR = null; }
   if (FOOT) { scene.remove(FOOT.mesh); FOOT = null; } onFoot = false;
-  clearSpeech();
+  clearSpeech(); clearCheckpoint();
   NPCS = []; PEDS = []; ANIMALS = []; POLICE = []; DEBRIS = []; WAITING = []; CROWDS = []; PROC = null; RIDER = null; BUS = null;
   wanted = 0; lostTimer = 0;
 }
@@ -112,10 +131,11 @@ function loadCity(id, keepPos){
   spawnPlayer(S.active, sp.x, sp.z, sp.h);
   if (W.collide(P.x, P.z, 1.2).hit) { P.x = W.spawn.x; P.z = W.spawn.z; P.h = W.spawn.h; }
   spawnTraffic(); spawnPeds(); spawnAnimals();
-  setupDay();
+  enableShadows();
+  setupDay(); BANNER.t = 8;
+  radioCityChanged();
   setupJob();
-  $('cityTxt').textContent = city.en;
-  $('cityNt').textContent = city.nt;
+  toast('📍 ' + city.en + ' · ' + city.dist + ' · ' + STATE_NAME[city.st].en, 'info');
 }
 function setupDay(){
   const c = W.city;
@@ -129,8 +149,7 @@ function setupDay(){
     const poi = W.poiBy(kind)[0];
     if (poi) { festToday = {kind, poi, info: FESTIVALS[kind][c.st]}; decorateFestival(W, poi, festToday.info); }
   }
-  const rainChance = c.st === 'KL' ? 0.45 : 0.25;
-  rainToday = ((h >>> 8) % 100) / 100 < rainChance ? {start: 600 + (h>>>4)%420, len: 90 + (h>>>12)%180} : null;
+  rainToday = null;
   if (PROC) { PROC.members.forEach(m => scene.remove(m.mesh)); PROC = null; }
 }
 
@@ -140,6 +159,8 @@ function spawnPlayer(id, x, z, h){
   const def = vehDef(id);
   const kind = def.cat === 'auto' ? 'auto' : def.cat === 'bus' ? 'bus' : def.cat === 'taxi' ? 'taxi' : 'car';
   const mesh = makeVehicle(kind, def, def.colors);
+  if (W && S && S.plate) attachRearPanel(mesh, W.city, S.plate);
+  mesh.traverse(o => { if (o.isMesh) o.castShadow = true; });
   scene.add(mesh);
   const nCirc = def.len > 6 ? 5 : def.len > 3.5 ? 3 : 2;
   const offs = []; for (let i = 0; i < nCirc; i++) offs.push(lerp(-def.len/2 + def.wid/2, def.len/2 - def.wid/2, nCirc===1?0.5:i/(nCirc-1)));
@@ -308,9 +329,22 @@ function addWanted(n, why){
   wanted = clamp(wanted + n, 0, 5);
   lostTimer = 0;
   toast('🚨 ' + why + (wanted > before ? '  ·  Wanted ' + '★'.repeat(wanted) : ''), 'bad');
+  if (before === 0 || POLICE.length === 0) spawnPoliceBehind();
   if (RIDER) RIDER.comfort -= 30;
   S.stats.fines += 0;
   ensurePolice();
+}
+function spawnPoliceBehind(){
+  if (INTERIOR) return;
+  const M = me(), f = fwd(M.h);
+  let x = M.x - f.x*26, z = M.z - f.z*26;
+  if (W.collide(x, z, 1.2).hit || W.surfaceAt(x,z) !== ROAD) {
+    const line = W.roadAt(M.x, M.z, M.h);
+    if (line) { if (line.axis === 'x') { x = M.x - Math.sign(f.x||1)*26; z = line.fixed; } else { x = line.fixed; z = M.z - Math.sign(f.z||1)*26; } }
+  }
+  const mesh = makeVehicle('police', {len:4.4,wid:1.8,id:'police'}, null); scene.add(mesh);
+  POLICE.push({mesh, x, z, h:Math.atan2(M.x-x, M.z-z), v:Math.max(8, Math.abs(M.v||0)), len:4.4, wid:1.8, stuck:0, rev:0});
+  setTimeout(() => { const c = POLICE[POLICE.length-1]; if (c) speak(c, 'police', 2.6); }, 300);
 }
 function ensurePolice(){
   const want = Math.min(4, wanted);
@@ -360,6 +394,7 @@ function updatePolice(dt){
     c.mesh.userData.siren[1].material.color.setHex(blink ? 0x110033 : 0x2050ff);
     c.mesh.userData.wheels.forEach(w => w.rotation.x += c.v*dt*3);
     if (d < 35 && Math.random() < dt*0.4) speak(c, 'police', 2.6);
+    if (Math.random() < dt*0.15) { const by = PEDS.find(pd => pd.down <= 0 && Math.hypot(pd.x-M.x, pd.z-M.z) < 30); if (by) speak(by, 'chase'); }
     // collide with player
     if (!onFoot) vehicleVsPlayer(c, true); else if (!INTERIOR) pushFromVehicle(FOOT, c, 0.4);
   }
@@ -374,7 +409,7 @@ function updatePolice(dt){
 }
 function busted(){
   const fine = 500 * Math.max(1, wanted);
-  S.money -= fine; S.stats.fines += fine; S.stats.busts++;
+  S.money -= fine; S.stats.fines += fine; S.stats.busts++; S.today.fines += fine;
   wanted = 0; bustTimer = 0;
   POLICE.forEach(c => scene.remove(c.mesh)); POLICE = [];
   if (RIDER) { toast(RIDER.name + ' got out.', 'info'); endRide(false); }
@@ -432,6 +467,7 @@ function pushFromVehicle(F, o, r){
   }
   return false;
 }
+function ownerShout(a, kind){ const by = PEDS.filter(pd => pd.down <= 0).sort((p,q) => Math.hypot(p.x-a.x,p.z-a.z) - Math.hypot(q.x-a.x,q.z-a.z))[0]; if (by && Math.hypot(by.x-a.x, by.z-a.z) < 45) { by._saidT = 0; speak(by, kind); } else { a._saidT = 0; speak(a, kind, 2.2); } }
 function crashFx(sp){ playNoise(0.25, 0.5 + Math.min(0.5, sp/30), 300); }
 
 // ============ Jobs: auto/taxi fares, bus routes ============
@@ -464,10 +500,8 @@ function refreshCrowd(c){
 }
 function spawnWaiting(){
   const isTaxi = P.def.cat === 'taxi';
-  let want = isTaxi ? 3 : 4;
-  const hr = (S.min/60)|0;
-  if ((hr >= 8 && hr < 10) || (hr >= 17 && hr < 20)) want += 2;
-  if (isRaining()) want += 1;
+  let want = 1;
+  if (RIDER) return;
   while (WAITING.length < want) {
     let spot = null;
     for (let t = 0; t < 30; t++) {
@@ -482,7 +516,9 @@ function spawnWaiting(){
     const beam = makeBeam(0xff9f1c); beam.position.set(spot.x,0,spot.z); scene.add(beam);
     const dests = W.pois.filter(p => Math.hypot(p.stop.x-spot.x, p.stop.z-spot.z) > 120);
     const dest = pick(dests.length ? dests : W.pois);
-    WAITING.push({x:spot.x, z:spot.z, mesh, beam, dest, name: pick(PASSENGER_NAMES[W.city.st]), hurry: Math.random() < 0.3, born: simT});
+    WAITING.push({x:spot.x, z:spot.z, mesh, beam, dest, name: pick(PASSENGER_NAMES[W.city.st]), hurry: Math.random() < 0.3, born: simT,
+      rating: +(3.6 + Math.random()*1.4).toFixed(1), pay: Math.random() < 0.55 ? 'UPI' : 'Cash'});
+    phoneNote('New ride request: ' + WAITING[WAITING.length-1].name); tone(1046,0.12,'sine',0.12); tone(1318,0.18,'sine',0.12,0.12);
   }
 }
 function updateJobs(dt){
@@ -498,7 +534,7 @@ function updateJobs(dt){
       const d = Math.hypot(P.x-w.x, P.z-w.z);
       if (!RIDER && d < 7) {
         if (spd < 2.8) { // board
-          RIDER = {name:w.name, dest:w.dest, hurry:w.hurry, start:simT, metered:0, comfort:100,
+          RIDER = {name:w.name, dest:w.dest, hurry:w.hurry, start:simT, metered:0, comfort:100, rating:w.rating, pay:w.pay, startMin:S.min,
             expected: (Math.abs(w.dest.stop.x-w.x)+Math.abs(w.dest.stop.z-w.z))*1.15/8 + 12};
           scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1);
           const line = w.hurry ? LINES.hurry[W.city.st] : pick(LINES.pick[W.city.st]);
@@ -507,7 +543,7 @@ function updateJobs(dt){
           if (P.paxMesh) P.paxMesh.visible = true;
           ding(1);
         } else $('prompt').textContent = 'Slow down to pick up ' + w.name;
-      } else if (simT - w.born > 200 && d > 120) { scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1); }
+      } else if (simT - w.born > 260 && d > 150) { scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1); phoneNote(w.name + ' cancelled the ride'); }
     }
     if (RIDER) {
       RIDER.metered += Math.max(0, P.v)*dt;
@@ -528,14 +564,14 @@ function updateJobs(dt){
           BUS.onboard -= off;
           const on = Math.min(c.count, P.def.seats - BUS.onboard);
           BUS.onboard += on; c.count -= on;
-          const earn = on * P.def.ticket;
-          S.money += earn; S.stats.earned += earn; S.stats.busPax += on;
+          let earn_ = 0;
+          earn(earn_ = Math.round(on * P.def.ticket * (isNight() ? 1.5 : 1)), isNight()); S.stats.busPax += on;
           refreshCrowd(c);
-          toast((on ? on + ' boarded (+' + money(earn) + ')' : 'Nobody waiting') + (off ? ' · ' + off + ' got off' : ''), on ? 'good' : 'info');
+          toast((on ? on + ' boarded (+' + money(earn_) + ')' : 'Nobody waiting') + (off ? ' · ' + off + ' got off' : ''), on ? 'good' : 'info');
           if (on) ding(1);
           BUS.hold = 0;
           BUS.next = (BUS.next + 1) % BUS.stops.length;
-          if (BUS.next === 0) { BUS.loops++; const bonus = 100; S.money += bonus; S.stats.earned += bonus; toast('Route complete! Bonus ' + money(bonus), 'good'); }
+          if (BUS.next === 0) { BUS.loops++; const bonus = 100; earn(bonus, false); toast('Route complete! Bonus ' + money(bonus), 'good'); }
           persist();
         }
       } else $('prompt').textContent = 'Stop at the bus stop';
@@ -551,16 +587,25 @@ function endRide(ok){
     const minKm = d.cat === 'taxi' ? 2 : 1.5;
     let fare = Math.round(Math.max(d.base, d.base + (km - minKm)*d.perKm));
     if (isRaining()) fare += 10;
+    const night = isNight();
+    if (night) fare = Math.round(fare * 1.5);
     const ratio = (simT - RIDER.start) / RIDER.expected;
     const comfort = clamp(RIDER.comfort, 0, 100)/100;
     let tip = Math.round(comfort * (ratio < 1 ? 25 : ratio < 1.4 ? 12 : 0) * (d.cat === 'taxi' ? 2 : 1));
     if (RIDER.hurry && ratio < 0.9) tip += 40;
     const total = fare + tip;
-    S.money += total; S.stats.earned += total; S.stats.trips++;
+    earn(total, night); S.stats.trips++; S.today.trips++;
     const good = comfort > 0.6 && ratio < 1.4;
+    const stars = clamp(Math.round(5 - (1-comfort)*3 - Math.max(0, ratio-1)*2), 1, 5);
+    const band = stars >= 4 ? 'good' : stars === 3 ? 'ok' : 'bad';
+    const ri = Math.floor(Math.random()*REVIEWS[band].en.length);
+    S.reviews.unshift({name:RIDER.name, stars, en:REVIEWS[band].en[ri], nt:REVIEWS[band][W.city.st][ri], city:W.city.en, day:S.day, fare:total});
+    if (S.reviews.length > 50) S.reviews.length = 50;
+    S.rating.sum += stars; S.rating.n++;
+    phoneNote(RIDER.name + ' rated you ' + '★'.repeat(stars));
     const line = pick((good ? LINES.good : LINES.bad)[W.city.st]);
     bubble(RIDER.name, line[1], line[0]);
-    toast('Fare ' + money(fare) + (tip ? ' + tip ' + money(tip) : '') + '  ·  ' + km.toFixed(1) + ' km', 'good');
+    toast('Fare ' + money(fare) + (night ? ' (night +50%)' : '') + (tip ? ' + tip ' + money(tip) : '') + '  ·  ' + km.toFixed(1) + ' km', 'good');
     ding(2);
   }
   RIDER = null; destBeam.visible = false; if (P.paxMesh) P.paxMesh.visible = false;
@@ -619,7 +664,8 @@ function updateProcession(dt){
 
 // ============ Player update ============
 const K = {}; const TOUCH = {}; let GP = {gas:0, brake:0, steer:0};
-function isRaining(){ return rainToday && S.min >= rainToday.start && S.min < rainToday.start + rainToday.len; }
+function isNight(){ const m = S.min % 1440; return m >= 1320 || m < 240; }
+function isRaining(){ return rainLevel() > 0.15; }
 function stepPlayer(dt){
   const d = P.def;
   const gas = Math.max(K['w']||K['arrowup']||TOUCH.gas ? 1 : 0, GP.gas);
@@ -689,9 +735,9 @@ function stepPlayer(dt){
         if (a.type === 'cow') {
           const nx = (cx-a.x)/(dd||1), nz = (cz-a.z)/(dd||1);
           P.x += nx*(P.r+rr-dd); P.z += nz*(P.r+rr-dd);
-          if (sp > 4 && P.bumpCD <= 0) { P.bumpCD = 1; crashFx(sp); breakParts(P.mesh, 'front', 1, scene, DEBRIS, {x:0,z:0}); S.damage = clamp(S.damage+10,0,100); toast('Watch out for the cow!', 'bad'); if (RIDER) RIDER.comfort -= 20; }
+          if (sp > 4 && P.bumpCD <= 0) { P.bumpCD = 1; crashFx(sp); breakParts(P.mesh, 'front', 1, scene, DEBRIS, {x:0,z:0}); S.damage = clamp(S.damage+10,0,100); ownerShout(a, 'cow'); if (RIDER) RIDER.comfort -= 20; }
           P.v *= 0.2; P.vx *= 0.2; P.vz *= 0.2;
-        } else if (a.knock <= 0) { a.knock = 2; a.h = P.h + rnd(-1,1); a.v = 5; a.t = 1.5; if (sp > 3) toast('The dog ran off, unhurt', 'info'); }
+        } else if (a.knock <= 0) { a.knock = 2; a.h = P.h + rnd(-1,1); a.v = 5; a.t = 1.5; if (sp > 3) ownerShout(a, 'dog'); }
         break;
       }
     }
@@ -817,32 +863,37 @@ function updateDebris(dt){
 const C_NIGHT = new THREE.Color(0x0b1626), C_DUSK = new THREE.Color(0xf08a4b), C_DAY = new THREE.Color(0x9fd3f0), C_RAIN = new THREE.Color(0x7d8b93);
 function daylight(m){ m %= 1440; if (m < 330 || m > 1170) return 0; if (m < 420) return (m-330)/90; if (m > 1080) return 1 - (m-1080)/90; return 1; }
 function updateEnvironment(dt){
-  const dl = daylight(S.min), rain = isRaining();
+  const dl = daylight(S.min);
   const dusk = clamp(1 - Math.abs((S.min % 1440) - 1110)/70, 0, 1) + clamp(1 - Math.abs((S.min % 1440) - 375)/60, 0, 1)*0.6;
   skyColor.copy(C_NIGHT).lerp(C_DAY, dl).lerp(C_DUSK, dusk*0.55);
-  if (rain) skyColor.lerp(C_RAIN, 0.65);
+  const rl = rainLevel();
+  if (rl > 0) skyColor.lerp(C_RAIN, Math.min(0.85, rl*0.9));
+  if (WX.flash > 0) skyColor.lerp(new THREE.Color(0xe8eeff), 0.7);
+  if (window.SKY) { SKY.position.copy(camera.position); SKY.material.uniforms.bot.value.copy(skyColor).lerp(new THREE.Color(0xffffff), 0.25*dl*(1-rl)); SKY.material.uniforms.top.value.copy(skyColor).multiplyScalar(0.75 + 0.1*dl); }
   scene.background = skyColor; scene.fog.color.copy(skyColor);
-  scene.fog.near = rain ? 60 : 150; scene.fog.far = rain ? 320 : (S.settings.gfx === 'high' ? 750 : 520);
-  hemi.intensity = 0.28 + 0.5*dl; sun.intensity = 0.12 + 0.85*dl*(rain?0.5:1);
+  scene.fog.near = lerp(150, 35, rl); scene.fog.far = lerp(S.settings.gfx === 'high' ? 750 : 520, 220, rl);
+  hemi.intensity = 0.28 + 0.5*dl + (WX.flash > 0 ? 1.2 : 0); sun.intensity = 0.12 + 0.85*dl*(1 - rl*0.6);
   const Mx = me(); sun.position.set(Mx.x + 200, 300, Mx.z + 120); sun.target.position.set(Mx.x, 0, Mx.z);
-  const night = dl < 0.45 || rain;
+  const night = dl < 0.45 || rl > 0.5;
   W.winMats.forEach(m => m.emissiveIntensity = clamp(0.9 - dl*1.2, 0, 0.9));
   W.lampMat.color.setHex(dl < 0.4 ? 0xfff2b0 : 0x555555);
   headLight.intensity = night && !INTERIOR ? 1.6 : 0;
   const f = fwd(P.h);
   headLight.position.set(P.x + f.x*P.def.len/2, (P.mesh.userData.headY||1) + 0.4, P.z + f.z*P.def.len/2);
   headLight.target.position.set(P.x + f.x*30, 0, P.z + f.z*30);
-  rainLines.visible = !!rain && !INTERIOR;
-  if (rain) {
+  rainLines.visible = rl > 0.05 && !INTERIOR; rainLines.material.opacity = 0.25 + rl*0.45;
+  if (rl > 0.05) {
     rainLines.position.set(camera.position.x, camera.position.y - 12, camera.position.z);
     const a = rainLines.geometry.attributes.position.array;
-    for (let i = 0; i < a.length; i += 6) { a[i+1] -= 28*dt; a[i+4] -= 28*dt; if (a[i+1] < 0) { a[i+1] += 30; a[i+4] += 30; } }
+    const vs = 22 + rl*16;
+    for (let i = 0; i < a.length; i += 6) { a[i+1] -= vs*dt; a[i+4] -= vs*dt; a[i+3] = a[i] + (WX.monsoon ? 0.35 : 0); if (a[i+1] < 0) { a[i+1] += 30; a[i+4] += 30; } }
     rainLines.geometry.attributes.position.needsUpdate = true;
   }
   // signals
-  [0,1].forEach(g => ['NS','EW'].forEach((ax,k) => { const t = (simT + g*15) % 30; let st; if (ax === 'NS') st = t<12?'G':t<15?'Y':'R'; else st = t<15?'R':t<27?'G':'Y'; W.sigMats[g*2+k].color.setHex(st==='G'?0x2ecc40:st==='Y'?0xffc107:0xff3b30); }));
+  const OFF = [0x3a0d0d,0x3a2a0a,0x0d3a18], ON = [0xff2a1a,0xffb000,0x2bff6a];
+  [0,1].forEach(g => ['NS','EW'].forEach((ax,k) => { const t = (simT + g*15) % 30; let st; if (ax === 'NS') st = t<12?'G':t<15?'Y':'R'; else st = t<15?'R':t<27?'G':'Y'; const on = st==='R'?0:st==='Y'?1:2; W.sigLamp[g][k].forEach((m,ci) => m.color.setHex(ci===on ? ON[ci] : OFF[ci])); }));
   W.cams.forEach(c => c.led.material.color.setHex(Math.floor(simT*2)%2 ? 0xff0000 : 0x330000));
-  setRainSound(rain ? (INTERIOR ? 0.04 : 0.12) : 0);
+  setRainSound(rl > 0.05 ? (INTERIOR ? 0.04 : 0.05 + rl*0.15) : 0);
 }
 
 // ============ Camera ============
@@ -870,7 +921,7 @@ function updateCamera(dt, snap){
   if (RIDER) target = RIDER.dest.stop;
   else if (BUS) target = BUS.stops[BUS.next];
   else if (WAITING.length) target = WAITING.reduce((a,w) => Math.hypot(w.x-P.x,w.z-P.z) < Math.hypot(a.x-P.x,a.z-P.z) ? w : a);
-  if (target && mode !== 'cab') {
+  if (false) {
     arrow.visible = true;
     arrow.position.set(P.x, (P.def.cat==='bus'?4.6:3.2) + Math.sin(simT*3)*0.12, P.z);
     arrow.rotation.y = Math.atan2(target.x-P.x, target.z-P.z);
@@ -943,30 +994,118 @@ function playNoise(dur, vol, freq){ if (!AU.ctx) return; const C = AU.ctx; const
 function drum(v){ if (!AU.ctx || v <= 0.02) return; tone(110, 0.18, 'sine', 0.25*v); playNoise(0.08, 0.15*v, 2500); }
 
 // ============ HUD ============
-let hudT = 0;
+let hudT = 0, phoneT = 0;
+const GOAL = 1000;
 function updateHUD(dt){
   hudT -= dt; if (hudT > 0) return; hudT = 0.1;
-  $('money').textContent = money(S.money);
+  const M = me();
+  if (S.today.day !== S.day) S.today = {day:S.day, earned:0, fines:0, trips:0, night:0};
+  const net = S.today.earned - S.today.fines;
+  $('money').textContent = money(net); $('money').classList.toggle('neg', net < 0);
+  $('goalTxt').textContent = money(GOAL);
+  $('netBar').style.width = clamp(net/GOAL*100, 0, 100) + '%';
+  const avg = S.rating.n ? (S.rating.sum/S.rating.n).toFixed(1) : '5.0';
+  $('earnSub').textContent = S.today.trips + ' trips · ' + avg + '★ · Wallet ' + money(S.money);
   $('stars').textContent = wanted ? '★'.repeat(wanted) + '☆'.repeat(5-wanted) : '';
   $('stars').classList.toggle('on', wanted > 0);
-  const kmh = Math.round(Math.abs(me().v)*3.6);
-  $('spd').textContent = kmh; $('speedo').classList.toggle('over', kmh > SPEED_LIMIT);
   $('timeTxt').textContent = fmtTime(S.min); $('dayTxt').textContent = 'Day ' + S.day;
-  $('wx').textContent = isRaining() ? '🌧' : daylight(S.min) < 0.3 ? '🌙' : '☀';
-  $('festTxt').textContent = festToday ? '🎉 ' + festToday.info.en + ' · ' + festToday.info.nt : '';
+  $('wx').textContent = WX.monsoon && rainLevel() > 0.4 ? '⛈' : isRaining() ? '🌧' : daylight(S.min) < 0.3 ? '🌙' : '☀';
   const cat = P.def.cat;
-  $('vehTxt').textContent = P.def.name + (S.damage > 0 ? '  ·  Damage ' + Math.round(S.damage) + '%' : '');
-  let flag = '', main = '', sub = '';
-  if (onFoot) { flag = INTERIOR ? 'INSIDE' : 'ON FOOT'; main = '🚶'; sub = INTERIOR ? INTERIOR.poi.en + ' · walk to the door to leave' : 'Hold GO to run. Walk back to your ' + P.def.name + ' to drive.'; }
+  $('vehTxt').textContent = (onFoot ? '🚶 On foot · ' : '') + P.def.name + (S.damage > 0 ? ' · Damage ' + Math.round(S.damage) + '%' : '') + (S.fatigue > 10 ? ' · 😴 Tired' : '');
+  // road name
+  const road = INTERIOR ? null : W.roadAt(M.x, M.z, M.h);
+  $('roadEn').textContent = INTERIOR ? INTERIOR.poi.en : road ? road.name[0] : W.city.en;
+  $('roadNt').textContent = INTERIOR ? INTERIOR.poi.nt : road ? road.name[1] : W.city.nt;
+  // meter
+  const nightNow = isNight();
+  $('nightTag').classList.toggle('hidden', !nightNow);
+  let flag = 'VACANT', fare = '---', km = '0.0', tt = '0:00', sub = '';
+  if (onFoot) { flag = INTERIOR ? 'INSIDE' : 'ON FOOT'; sub = INTERIOR ? 'Walk to the door to leave' : 'Hold GO to run · walk back to your ' + P.def.name; }
   else if (cat === 'auto' || cat === 'taxi') {
-    if (RIDER) { const km = RIDER.metered*DIST_SCALE/1000; const minKm = cat==='taxi'?2:1.5; const fare = Math.round(Math.max(P.def.base, P.def.base + (km-minKm)*P.def.perKm)); flag = 'HIRED'; main = money(fare); sub = km.toFixed(1) + ' km → ' + RIDER.dest.en; }
-    else { flag = 'VACANT'; main = '₹ ---'; sub = WAITING.length + ' people waiting · follow the orange arrow'; }
-  } else if (cat === 'bus') { flag = 'ON ROUTE'; main = (BUS ? BUS.onboard : 0) + '/' + P.def.seats; sub = BUS ? 'Next: ' + BUS.stops[BUS.next].name : ''; }
-  else { flag = 'FREE RIDE'; main = '🚗'; sub = 'Cars are for speed. Earn with autos, taxis & buses.'; }
-  $('flagTxt').textContent = flag; $('flag').className = 'led ' + (onFoot ? 'vac' : RIDER || cat==='bus' ? 'hired' : 'vac');
-  $('fare').textContent = main; $('fareSub').textContent = sub;
+    if (RIDER) { const k = RIDER.metered*DIST_SCALE/1000; const minKm = cat==='taxi'?2:1.5; let f = Math.round(Math.max(P.def.base, P.def.base + (k-minKm)*P.def.perKm)); if (nightNow) f = Math.round(f*1.5);
+      flag = 'HIRED'; fare = String(f); km = k.toFixed(1); const el = Math.floor((S.min - RIDER.startMin + 1440) % 1440); tt = Math.floor(el/60) + ':' + String(el%60).padStart(2,'0'); sub = '→ ' + RIDER.dest.en; }
+    else sub = WAITING.length ? 'Ride request: ' + WAITING[0].name + ' · follow the GPS' : 'Looking for passengers…';
+  } else if (cat === 'bus') { flag = 'ON ROUTE'; fare = BUS ? String(BUS.onboard) : '0'; km = String(P.def.seats); sub = BUS ? 'Next stop: ' + BUS.stops[BUS.next].name : ''; }
+  else { flag = 'PRIVATE'; sub = 'Personal car · no fares'; }
+  $('flagTxt').textContent = flag; $('flag').className = 'led ' + (RIDER || cat === 'bus' ? 'hired' : 'vac');
+  $('fare').textContent = fare; $('kmTxt').textContent = km; $('tripT').textContent = tt; $('fareSub').textContent = sub;
+  $('meter').querySelector('.mgrid small').textContent = cat === 'bus' ? 'ON BOARD' : 'FARE ₹';
+  $('meter').querySelectorAll('.mgrid small')[1].textContent = cat === 'bus' ? 'SEATS' : 'KM';
+  // festival banner (shown for a few seconds after each city load / day change)
+  if (festToday && BANNER.t > 0) { $('banner').classList.remove('hidden'); $('banTag').textContent = 'TODAY · ' + festToday.info.en.toUpperCase(); $('banNt').textContent = festToday.info.nt; $('banEn').textContent = 'Procession around ' + festToday.poi.en + ' from 4 PM. Expect road blocks.'; }
+  else $('banner').classList.add('hidden');
+  BANNER.t -= 0.1;
   updateAction();
-  drawMinimap();
+  drawGPS(); drawSpeedo();
+  phoneT -= 0.1; if (phoneT <= 0) { phoneT = 0.4; renderPhone(); }
+}
+const BANNER = {t: 0};
+function drawSpeedo(){
+  const cv = $('speedoC'), x = cv.getContext('2d'), w = cv.width, c = w/2, r = w*0.43;
+  const top = onFoot ? 20 : P.def.speed;
+  const scales = [[20,5],[60,10],[80,10],[120,20],[160,20],[240,40],[320,40],[400,50]];
+  const [max, step] = scales.find(([m]) => top <= m) || scales[scales.length-1];
+  const kmh = Math.abs(me().v)*3.6;
+  const a0 = Math.PI*0.75, a1 = Math.PI*2.25, ang = v => a0 + (a1-a0)*clamp(v/max,0,1);
+  x.clearRect(0,0,w,w);
+  x.fillStyle = 'rgba(14,22,30,.82)'; x.beginPath(); x.arc(c,c,r+16,0,7); x.fill();
+  x.strokeStyle = 'rgba(244,208,63,.65)'; x.lineWidth = 3; x.beginPath(); x.arc(c,c,r+15,0,7); x.stroke();
+  // limit zone
+  x.strokeStyle = 'rgba(229,57,53,.85)'; x.lineWidth = 10; x.beginPath(); x.arc(c,c,r-2,ang(SPEED_LIMIT),a1); x.stroke();
+  x.fillStyle = '#f6efd9'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 ' + Math.round(w*0.065) + 'px "Baloo Chettan 2",sans-serif';
+  for (let v = 0; v <= max + 0.1; v += step/2) {
+    const a = ang(v), major = Math.abs(v/step - Math.round(v/step)) < 0.01;
+    x.strokeStyle = major ? '#f6efd9' : 'rgba(246,239,217,.5)'; x.lineWidth = major ? 4 : 2;
+    x.beginPath(); x.moveTo(c + Math.cos(a)*(r-(major?18:10)), c + Math.sin(a)*(r-(major?18:10))); x.lineTo(c + Math.cos(a)*r, c + Math.sin(a)*r); x.stroke();
+    if (major) x.fillText(Math.round(v), c + Math.cos(a)*(r-40), c + Math.sin(a)*(r-40));
+  }
+  const a = ang(kmh);
+  x.strokeStyle = '#ff8a3d'; x.lineWidth = 6; x.lineCap = 'round'; x.beginPath(); x.moveTo(c - Math.cos(a)*16, c - Math.sin(a)*16); x.lineTo(c + Math.cos(a)*(r-14), c + Math.sin(a)*(r-14)); x.stroke();
+  x.fillStyle = '#ddd'; x.beginPath(); x.arc(c,c,13,0,7); x.fill();
+  x.fillStyle = kmh > SPEED_LIMIT ? '#ff6b5a' : '#fff'; x.font = '800 ' + Math.round(w*0.15) + 'px "Share Tech Mono",monospace'; x.fillText(Math.round(kmh), c, c + r*0.55);
+  x.fillStyle = 'rgba(246,239,217,.7)'; x.font = '700 ' + Math.round(w*0.06) + 'px sans-serif'; x.fillText('km/h', c, c + r*0.82);
+}
+function renderPhone(){
+  $('phoneClock').textContent = fmtTime(S.min);
+  const note = $('phoneNote'); if (PHONE.noteT > 0) { note.textContent = PHONE.note; note.classList.remove('hidden'); } else note.classList.add('hidden');
+  const b = $('phoneBody'), tab = PHONE.tab, cat = P.def.cat;
+  let h = '', mini = '';
+  if (tab === 'ride') {
+    if (onFoot && !RIDER) h = '<p>You\'re on foot. Walk back to your ' + escapeHtml(P.def.name) + ' to take rides.</p>';
+    else if (cat === 'car') h = '<p><b>Private car</b></p><p class="small">Ride requests only come in autos and taxis. Buses run routes. Switch vehicles at a showroom or in My vehicles.</p>';
+    else if (cat === 'bus' && BUS) { const st = BUS.stops[BUS.next]; h = '<span class="pill trip">BUS ROUTE</span><div class="stat"><b>Next stop: ' + escapeHtml(st.name) + '</b><span>' + (ROUTE ? Math.round(ROUTE.len) + ' m away' : '') + ' · ' + BUS.onboard + '/' + P.def.seats + ' on board</span></div><div class="stat"><b>₹' + P.def.ticket + ' per ticket</b><span>Route bonus ₹100 · ' + BUS.loops + ' loops done</span></div>'; mini = '🚌 ' + st.name; }
+    else if (RIDER) {
+      const dist = ROUTE ? Math.round(ROUTE.len) : 0;
+      h = '<div class="rq"><div class="av">' + RIDER.name[0] + '</div><div><span class="pill trip">ON TRIP</span><div class="nm">' + escapeHtml(RIDER.name) + '</div><div class="meta">' + RIDER.rating + ' ★ · ' + RIDER.pay + (RIDER.hurry ? ' · In a hurry!' : '') + '</div></div><div class="dist"><b>' + dist + '</b><small>m to go</small></div></div>' +
+          '<div class="stat"><b>Drop at ' + escapeHtml(RIDER.dest.en) + '</b><span>' + escapeHtml(RIDER.dest.nt) + '</span></div><div class="stat"><span>Follow the teal line on your GPS and stop at the marker.' + (isNight() ? ' Night fare +50% is on.' : '') + '</span></div>';
+      mini = '🧍 ' + RIDER.name + ' → ' + RIDER.dest.en + ' · ' + dist + ' m';
+    } else if (WAITING.length) {
+      const w = WAITING[0], dist = ROUTE ? Math.round(ROUTE.len) : Math.round(Math.hypot(w.x-P.x, w.z-P.z));
+      h = '<div class="rq"><div class="av">' + w.name[0] + '</div><div><span class="pill">PICKUP</span><div class="nm">' + escapeHtml(w.name) + '</div><div class="meta">' + w.rating + ' ★ · ' + w.pay + (w.hurry ? ' · In a hurry' : '') + '</div></div><div class="dist"><b>' + dist + '</b><small>m away</small></div></div>' +
+          '<div class="stat"><b>Waiting at the roadside</b><span>Follow the orange line on your GPS and stop beside them.</span></div><div class="stat"><span>Going to ' + escapeHtml(w.dest.en) + '</span></div>';
+      mini = '🧍 Pickup: ' + w.name + ' · ' + dist + ' m';
+    } else { h = '<p>Looking for ride requests…</p>'; mini = '📱 Looking for rides…'; }
+  } else if (tab === 'reviews') {
+    const avg = S.rating.n ? (S.rating.sum/S.rating.n) : 0;
+    h = '<div class="big">' + (S.rating.n ? avg.toFixed(2) : '–') + ' ★</div><p class="small">' + S.rating.n + ' ratings</p>';
+    if (!S.reviews.length) h += '<p class="small">Finish rides to get reviews from passengers.</p>';
+    S.reviews.slice(0,12).forEach(r => h += '<div class="rv"><b>' + escapeHtml(r.name) + '</b> <span class="st">' + '★'.repeat(r.stars) + '☆'.repeat(5-r.stars) + '</span><p class="n">' + escapeHtml(r.nt) + '</p><p>' + escapeHtml(r.en) + '</p><span class="small">' + escapeHtml(r.city) + ' · Day ' + r.day + ' · ' + money(r.fare) + '</span></div>');
+  } else if (tab === 'earn') {
+    const t = S.today;
+    h = '<div class="big">' + money(t.earned - t.fines) + '</div><p class="small">Today\'s net · Goal ' + money(GOAL) + '</p>' +
+      '<div class="stat"><b>' + money(t.earned) + ' earned · ' + money(t.fines) + ' fines</b><span>' + t.trips + ' trips · ' + money(t.night) + ' from night fares</span></div>' +
+      '<div class="stat"><b>Wallet ' + money(S.money) + '</b><span>All-time earnings ' + money(S.stats.earned) + '</span></div>' +
+      '<div class="stat"><b>Driving ' + Math.floor(S.fatigue||0) + ' h without rest</b><span>' + (S.fatigue > 10 ? 'Take a chai break at a tea shop!' : 'Police check you are fit to drive') + '</span></div>' +
+      '<div class="stat"><b>Papers</b><span>Insurance to Day ' + S.docs.insUntil + ' · Permit to Day ' + S.docs.permitUntil + ' · PUC to Day ' + S.docs.pucUntil + '</span></div>';
+  } else {
+    const M = me(), road = INTERIOR ? null : W.roadAt(M.x, M.z, M.h), st = STATE_NAME[W.city.st];
+    h = '<span class="pill">YOU ARE ON</span><div class="big" style="font-size:20px">' + escapeHtml(road ? road.name[0] : (INTERIOR ? INTERIOR.poi.en : 'Side street')) + '</div><p class="n">' + escapeHtml(road ? road.name[1] : '') + '</p>' +
+      '<div class="stat"><b>' + escapeHtml(W.city.en) + ' · ' + escapeHtml(W.city.dist) + ' district</b><span>' + escapeHtml(W.city.nt) + ' · ' + st.en + ' · ' + st.nt + '</span></div>' +
+      '<div class="stat"><b>' + (WX.monsoon && rainLevel() > 0.4 ? 'Monsoon storm' : isRaining() ? 'Raining' : 'Clear') + ' · ' + fmtTime(S.min) + '</b><span>' + (festToday ? festToday.info.en + ' today' : 'No festival today') + '</span></div>' +
+      '<p class="small">Street layouts are made up. Road names are real ones used in this city, or common local names.</p>';
+  }
+  if (b._h !== h) { b.innerHTML = h; b._h = h; }
+  $('phoneMini').textContent = (mini || '📱 Vandi Ride') + '  ▴';
 }
 function nearPOI(types, dist){ if (!W) return null; let best = null, bd = dist; for (const p of W.pois) { if (!types.includes(p.type)) continue; const M = me(); const d = Math.hypot(p.stop.x-M.x, p.stop.z-M.z); if (d < bd) { bd = d; best = p; } } return best; }
 let ACTION = null;
@@ -978,14 +1117,18 @@ function updateAction(){
     if (Math.hypot(FOOT.x-INTERIOR.door.x, FOOT.z-INTERIOR.door.z) < 3) ACTION = {label:'Go outside', f:leaveBuilding};
     fb.classList.add('hidden');
   } else if (onFoot) {
-    const walk = nearPOI(['temple','church','mosque','museum'], 8), sh = nearPOI(SHOP_TYPES, 9);
-    if (walk) ACTION = {label:'Go inside the ' + PLACE_TYPES[walk.type].en.replace('Juma ',''), f:() => enterBuilding(walk)};
+    const walk = nearPOI(['temple','church','mosque','museum'], 8), sh = nearPOI(SHOP_TYPES, 9), rto = nearPOI(['rto'], 9), tea = nearPOI(['tea'], 9);
+    if (rto) ACTION = {label:'RTO: licences & papers', f:openRTO};
+    else if (tea) ACTION = {label:'☕ Chai break (₹15)', f:chaiBreak};
+    else if (walk) ACTION = {label:'Go inside the ' + PLACE_TYPES[walk.type].en.replace('Juma ',''), f:() => enterBuilding(walk)};
     else if (sh) ACTION = {label:'Enter ' + PLACE_TYPES[sh.type].en, f:() => openShowroom(PLACE_TYPES[sh.type].shop)};
     fb.textContent = '🚗'; fb.title = 'Get in (F)'; fb.classList.toggle('hidden', !nearOwnVehicle());
   } else {
     if (Math.abs(P.v) < 2.5 && !wanted) {
-      const sh = nearPOI(SHOP_TYPES, 11), pt = nearPOI(['petrol'], 12), holy = nearPOI(['temple','church','mosque','museum'], 10);
+      const sh = nearPOI(SHOP_TYPES, 11), pt = nearPOI(['petrol'], 12), holy = nearPOI(['temple','church','mosque','museum'], 10), rto = nearPOI(['rto'], 11), tea = nearPOI(['tea'], 10);
       if (sh) ACTION = {label:'Enter ' + PLACE_TYPES[sh.type].en, f:() => openShowroom(PLACE_TYPES[sh.type].shop)};
+      else if (rto) ACTION = {label:'RTO: licences & papers', f:openRTO};
+      else if (tea) ACTION = {label:'☕ Chai break (₹15)', f:chaiBreak};
       else if (pt) ACTION = {label: S.damage > 0 ? 'Repair (' + money(repairCost()) + ')' : 'Garage', f:() => openGarage(true)};
       else if (holy) ACTION = {label:'Park & walk in', f:() => { getOut(); }};
     }
@@ -995,29 +1138,45 @@ function updateAction(){
   if (ACTION) { b.textContent = ACTION.label + (IS_TOUCH ? '' : '  [E]'); b.classList.remove('hidden'); } else b.classList.add('hidden');
 }
 function toggleFoot(){ if (INTERIOR) return; if (onFoot) { if (nearOwnVehicle()) getIn(); else toast('Walk back to your ' + P.def.name + ' to get in', 'info'); } else getOut(); }
-const mini = {k: 0.55};
-function drawMinimap(){
-  const cv = $('mini'), x = cv.getContext('2d'), w = cv.width, h = cv.height, cx = w/2, cy = h/2;
+function drawGPS(){
+  const cv = $('gps'), x = cv.getContext('2d'), w = cv.width, c = w/2, R = c - 4;
   const M = me();
-  const k = mini.k * (w/170) * (onFoot ? 1.8 : 1), a = M.h + Math.PI;
-  x.clearRect(0,0,w,h);
-  if (INTERIOR) { x.fillStyle = '#4a235a'; x.beginPath(); x.arc(cx,cy,w/2-2,0,7); x.fill(); x.fillStyle='#fff'; x.font='700 28px sans-serif'; x.textAlign='center'; x.fillText('Inside', cx, cy+10); return; }
-  x.save(); x.beginPath(); x.arc(cx,cy,w/2-2,0,7); x.clip();
-  x.fillStyle = '#3e6b2c'; x.fillRect(0,0,w,h);
-  x.translate(cx,cy); x.rotate(a); x.scale(k,k); x.translate(-M.x,-M.z);
-  x.drawImage(W.miniCanvas, -HALF, -HALF, W.N*T, W.N*T);
+  x.clearRect(0,0,w,w);
+  x.save(); x.beginPath(); x.arc(c,c,R,0,7); x.clip();
+  x.fillStyle = '#1b2a22'; x.fillRect(0,0,w,w);
+  if (INTERIOR) { x.fillStyle = '#4a235a'; x.fillRect(0,0,w,w); x.fillStyle = '#fff'; x.font = '800 36px sans-serif'; x.textAlign = 'center'; x.fillText('Inside', c, c+12); x.restore(); return; }
+  const range = onFoot ? 120 : 240, k = R/range;            // pixels per metre
+  const toS = (px, pz) => [c + (px - M.x)*k, c + (pz - M.z)*k];
+  const [mx0, my0] = toS(-HALF, -HALF);
+  x.globalAlpha = 0.95; x.drawImage(W.miniCanvas, mx0, my0, W.N*T*k, W.N*T*k); x.globalAlpha = 1;
+  // route line
+  if (ROUTE) {
+    const col = RIDER ? '#19c3b8' : BUS ? '#3c8dff' : '#ff9f1c';
+    x.lineJoin = 'round'; x.lineCap = 'round';
+    [[14,'rgba(0,0,0,.55)'],[8,col]].forEach(([lw,cl]) => { x.strokeStyle = cl; x.lineWidth = lw; x.beginPath(); ROUTE.forEach((p,i) => { const [sx,sy] = toS(p.x,p.z); i ? x.lineTo(sx,sy) : x.moveTo(sx,sy); }); x.stroke(); });
+    const end = ROUTE[ROUTE.length-1]; const [ex,ey] = toS(end.x,end.z);
+    x.fillStyle = col; x.beginPath(); x.arc(ex,ey,11,0,7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 3; x.stroke();
+  }
+  // place labels
+  x.font = '700 17px "Baloo Chettan 2",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  W.pois.forEach(p => { const [sx,sy] = toS(p.x,p.z); if (Math.hypot(sx-c,sy-c) > R-20) return; const lab = PLACE_TYPES[p.type].en.replace('Juma ','').replace(' & Garage','');
+    x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText(lab, sx, sy); x.fillStyle = '#fff'; x.fillText(lab, sx, sy); });
+  const dot = (px,pz,col,rad) => { let [sx,sy] = toS(px,pz); const d = Math.hypot(sx-c,sy-c); if (d > R-10) { sx = c + (sx-c)/d*(R-10); sy = c + (sy-c)/d*(R-10); } x.fillStyle = col; x.beginPath(); x.arc(sx,sy,rad,0,7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 2; x.stroke(); };
+  NPCS.forEach(n => { const [sx,sy] = toS(n.x,n.z); if (Math.hypot(sx-c,sy-c) < R) { x.fillStyle = 'rgba(255,255,255,.55)'; x.fillRect(sx-2,sy-2,4,4); } });
+  if (PROC) dot(PROC.members[0].x, PROC.members[0].z, '#bf5af2', 8);
+  if (CHECK) dot(CHECK.x, CHECK.z, '#1f3a93', 8);
+  POLICE.forEach(p => dot(p.x, p.z, Math.floor(simT*4)%2 ? '#ff3b30' : '#0a84ff', 7));
+  if (onFoot) dot(P.x, P.z, '#f5a623', 8);
+  // player marker (north-up map, marker turns with you)
+  x.save(); x.translate(c,c); x.rotate(-M.h + Math.PI);
+  x.fillStyle = '#ffd15c'; x.strokeStyle = '#3a2a00'; x.lineWidth = 3;
+  x.beginPath(); x.moveTo(0,-20); x.lineTo(13,14); x.lineTo(0,7); x.lineTo(-13,14); x.closePath(); x.fill(); x.stroke();
   x.restore();
-  const toMini = (px, pz) => { const dx = px-M.x, dz = pz-M.z; const sx = (dx*Math.cos(a) - dz*Math.sin(a))*k, sy = (dx*Math.sin(a) + dz*Math.cos(a))*k; const r = Math.hypot(sx,sy), lim = w/2-8; return r > lim ? [cx + sx/r*lim, cy + sy/r*lim, true] : [cx+sx, cy+sy, false]; };
-  const dot = (px,pz,col,rad) => { const [sx,sy] = toMini(px,pz); x.fillStyle = col; x.beginPath(); x.arc(sx,sy,rad,0,7); x.fill(); x.strokeStyle='#fff'; x.lineWidth=1.5; x.stroke(); };
-  WAITING.forEach(wt => dot(wt.x, wt.z, '#ff9f1c', 4));
-  if (RIDER) dot(RIDER.dest.stop.x, RIDER.dest.stop.z, '#19c3b8', 6);
-  if (BUS) dot(BUS.stops[BUS.next].x, BUS.stops[BUS.next].z, '#3c8dff', 6);
-  if (PROC) dot(PROC.members[0].x, PROC.members[0].z, '#bf5af2', 5);
-  POLICE.forEach(c => dot(c.x, c.z, Math.floor(simT*4)%2 ? '#ff3b30' : '#0a84ff', 4));
-  if (onFoot) dot(P.x, P.z, '#f5a623', 5);
-  // player arrow
-  x.fillStyle = '#fff'; x.beginPath(); x.moveTo(cx, cy-8); x.lineTo(cx-6, cy+6); x.lineTo(cx+6, cy+6); x.closePath(); x.fill();
-  x.strokeStyle = 'rgba(244,208,63,.9)'; x.lineWidth = 3; x.beginPath(); x.arc(cx,cy,w/2-2,0,7); x.stroke();
+  x.restore();
+  // compass ring
+  x.strokeStyle = 'rgba(244,208,63,.85)'; x.lineWidth = 6; x.beginPath(); x.arc(c,c,R-2,0,7); x.stroke();
+  x.fillStyle = '#0e161e'; x.font = '800 20px sans-serif';
+  [['N',0,-1],['E',1,0],['S',0,1],['W',-1,0]].forEach(([t,dx,dy]) => { const px = c+dx*(R-18), py = c+dy*(R-18); x.fillStyle = 'rgba(14,22,30,.85)'; x.beginPath(); x.arc(px,py,14,0,7); x.fill(); x.fillStyle = t === 'N' ? '#ff6b5a' : '#f6efd9'; x.fillText(t, px, py+1); });
 }
 function toast(msg, kind){
   const el = document.createElement('div'); el.className = 'toast ' + (kind||'info'); el.textContent = msg;
@@ -1045,7 +1204,11 @@ function speak(target, kind, height){
   if (target._saidT && simT - target._saidT < 6) return;
   const M = me(); if (Math.hypot(target.x - M.x, target.z - M.z) > 60) return;
   target._saidT = simT;
-  const text = pick(REACT[kind][reactLang()]);
+  const lang = reactLang(); const arr = REACT[kind][lang]; const idx = Math.floor(Math.random()*arr.length);
+  const text = arr[idx];
+  const roman = lang === 'ml' ? REACT[kind].mg[idx] : lang === 'ta' ? REACT[kind].tg[idx] : text;
+  const dist = Math.hypot(target.x - M.x, target.z - M.z);
+  sayAloud(text, lang, roman, {volume: clamp(1 - dist/60, 0.25, 1), force: kind === 'police', pitch: kind === 'police' ? 0.8 : undefined});
   const el = document.createElement('div'); el.className = 'sb ' + kind; el.textContent = (kind === 'angry' || kind === 'crash' ? '💢 ' : kind === 'police' ? '🚨 ' : '') + text;
   $('bubbles').appendChild(el);
   SPEECH.push({el, t:target, h: height || 2.2, until: simT + 3.2});
@@ -1099,9 +1262,10 @@ const SHOP_OF = {car:'carshow', auto:'autoshow', taxi:'taxishow', bus:'busshow'}
 function openShowroom(cat){
   let tab = cat || P.def.cat;
   const render = () => {
-    const list = VEHICLES.filter(v => v.cat === tab);
+    const list = VEHICLES.filter(v => v.cat === tab).sort((a,b) => a.price - b.price);
     const pt = PLACE_TYPES[SHOP_OF[tab]];
-    let html = '<h2>' + {car:'🏎',auto:'🛺',taxi:'🚕',bus:'🚌'}[tab] + ' ' + escapeHtml(W.city.en) + ' ' + pt.en + '</h2><p class="native">' + escapeHtml(pt[W.city.st]) + '</p><p class="small">You have <b>' + money(S.money) + '</b>' + (onFoot ? ' · A vehicle you buy here is parked outside for you.' : '') + '</p>';
+    const needL = LICENCE_NEEDS[tab].filter(k => !S.docs[k]);
+    let html = '<h2>' + {car:'🏎',auto:'🛺',taxi:'🚕',bus:'🚌'}[tab] + ' ' + escapeHtml(W.city.en) + ' ' + pt.en + '</h2><p class="native">' + escapeHtml(pt[W.city.st]) + '</p><p class="small">You have <b>' + money(S.money) + '</b>' + (onFoot ? ' · A vehicle you buy here is parked outside for you.' : '') + ' · ' + list.length + ' models</p>' + (needL.length ? '<p class="festbox">You\'ll need a ' + needL.map(k => LICENCE_NAMES[k]).join(' and ') + ' from the RTO office to drive these legally.</p>' : '');
     html += '<div class="vlist">';
     list.forEach(v => {
       const owned = S.owned.includes(v.id), active = S.active === v.id;
@@ -1119,12 +1283,14 @@ function openShowroom(cat){
 function openGarage(atPump){
   const render = () => {
     let html = '<h2>🔧 My vehicles</h2>';
+    if (atPump) html += '<p>Pollution certificate valid to Day ' + S.docs.pucUntil + '. <button class="btn small" id="pucBtn"' + (S.money < 100 ? ' disabled' : '') + '>Renew 15 days · ₹100</button></p>';
     if (atPump && S.damage > 0) html += '<p>Your ' + escapeHtml(P.def.name) + ' is ' + Math.round(S.damage) + '% damaged. <button class="btn small" id="repBtn"' + (S.money < repairCost() ? ' disabled' : '') + '>Repair for ' + money(repairCost()) + '</button></p>';
     else if (!atPump) html += '<p class="small">Repairs are done at any petrol pump. Buy new vehicles at the showroom.</p>';
     html += '<div class="vlist">';
     S.owned.forEach(id => { const v = vehDef(id); html += '<div class="vrow"><div class="sw" style="background:#' + v.colors[0].toString(16).padStart(6,'0') + '"></div><div class="vinfo"><b>' + v.name + '</b><span>' + CAT_NAMES[v.cat].slice(0,-1) + ' · ' + v.speed + ' km/h</span></div>' + (S.active === id ? '<span class="tag">Driving</span>' : '<button class="btn small" data-drive="' + id + '">Drive</button>') + '</div>'; });
     html += '</div>';
     showModal(html, [{t:'Close', f:closeModal}]);
+    const pb = $('pucBtn'); if (pb) pb.onclick = () => { if (S.money < 100) return; S.money -= 100; S.docs.pucUntil = Math.max(S.docs.pucUntil, S.day) + 15; toast('Pollution certificate renewed', 'good'); persist(); render(); };
     const rb = $('repBtn'); if (rb) rb.onclick = () => { const c = repairCost(); if (S.money < c) return; S.money -= c; S.damage = 0; spawnPlayer(S.active, P.x, P.z, P.h); setupJob(); toast('Repaired and good as new', 'good'); persist(); render(); };
     $('modalBody').querySelectorAll('[data-drive]').forEach(b => b.onclick = () => { switchVehicle(b.dataset.drive); render(); });
   };
@@ -1208,8 +1374,11 @@ function frame(now){
     simT += dt;
     const before = S.min;
     S.min += dt;  // 1 real second = 1 game minute
-    if (S.min >= 1440) { S.min -= 1440; S.day++; setupDay(); toast('A new day: Day ' + S.day, 'info'); persist(); }
+    if (S.min >= 1440) { S.min -= 1440; S.day++; setupDay(); S.today = {day:S.day, earned:0, fines:0, trips:0, night:0}; toast('A new day: Day ' + S.day, 'info'); persist(); }
+    if (Math.floor(before) % 1440 < 1320 && Math.floor(S.min) % 1440 >= 1320) { toast('🌙 Night fares: +50% until 4 AM', 'good'); phoneNote('Night fares active: +50% until 4 AM'); }
     if (onFoot) stepFoot(dt); else stepPlayer(dt);
+    updateWeather(dt); updateChecks(dt); updateRoute(dt);
+    if (PHONE.noteT > 0) PHONE.noteT -= dt;
     updateTraffic(dt); updatePeds(dt); updateAnimals(dt); updatePolice(dt);
     if (!onFoot) updateJobs(dt); else { $('prompt').textContent = ''; destBeam.visible = !!RIDER; }
     updateProcession(dt); updateDebris(dt);
@@ -1233,6 +1402,7 @@ addEventListener('keydown', e => {
   if (k === 'c') cycleCam();
   if (k === 'h' && !onFoot) { honk(); honkReact(); }
   if (k === 'f' && !paused) toggleFoot();
+  if (k === 'r' && !paused) radioToggle();
   if ((k === 'e' || k === 'enter') && ACTION && !paused) ACTION.f();
   if (k === 'm' && !paused && !INTERIOR) openMap();
 });
@@ -1309,7 +1479,7 @@ function login(id, name){
   }, 50);
 }
 function logout(){
-  persist(); playing = false; paused = false;
+  persist(); if (RADIO_SYS.on) { RADIO_SYS.on = false; stopRadio(); } playing = false; paused = false;
   $('pause').classList.add('hidden'); $('hud').classList.add('hidden'); document.body.classList.remove('playing');
   disposeTown(); if (P) scene.remove(P.mesh); W = null; P = null; S = null; ACC = null;
   renderAccounts(); $('accScreen').classList.remove('hidden');
@@ -1321,11 +1491,13 @@ function openSettings(){
     '<label class="row">Camera <select id="camSel"><option value="chase">Behind</option><option value="high">High</option><option value="cab">Driver seat</option></select></label>' +
     '<label class="row">Sound <input type="checkbox" id="sndChk"' + (s.sound ? ' checked' : '') + '></label>' +
     '<label class="row">People react (speech bubbles) <input type="checkbox" id="reactChk"' + (s.reactions !== false ? ' checked' : '') + '></label>' +
+    '<label class="row">Hear people shout (voice) <input type="checkbox" id="voiceChk"' + (s.voices !== false ? ' checked' : '') + '></label>' +
+    '<p class="small">Voices come from your phone. ' + (hasVoice('ml') ? 'Malayalam ✓ ' : 'No Malayalam voice (Manglish is used instead) · ') + (hasVoice('ta') ? 'Tamil ✓' : 'No Tamil voice (Tanglish is used instead)') + '. Add voices under your phone\'s Settings → Text-to-speech.</p>' +
     '<label class="row">Reaction language <select id="reactSel">' + Object.entries(REACT_LANGS).map(([k,v]) => '<option value="' + k + '">' + v + '</option>').join('') + '</select></label>' +
     '<h3>Backup</h3><p class="small">Your progress is saved on this device. To move it to another phone or keep a copy, copy this backup code and keep it somewhere safe.</p>' +
     '<textarea id="bkTxt" rows="3" readonly></textarea><div class="row"><button class="btn small" id="bkCopy">Copy code</button></div>' +
     '<p class="small">Restore from a code (replaces this account\'s progress):</p><textarea id="rsTxt" rows="2" placeholder="Paste a backup code"></textarea><div class="row"><button class="btn small ghost" id="rsGo">Restore</button><span id="rsMsg" class="small"></span></div>',
-    [{t:'Done', f:() => { s.gfx = $('gfxSel').value; s.cam = $('camSel').value; s.sound = $('sndChk').checked; s.reactions = $('reactChk').checked; s.reactLang = $('reactSel').value; setSound(s.sound); applyGfx(); persist(); closeModal(); setPaused(true); }}]);
+    [{t:'Done', f:() => { s.gfx = $('gfxSel').value; s.cam = $('camSel').value; s.sound = $('sndChk').checked; s.reactions = $('reactChk').checked; s.voices = $('voiceChk').checked; s.reactLang = $('reactSel').value; setSound(s.sound); applyGfx(); persist(); closeModal(); setPaused(true); }}]);
   $('gfxSel').value = s.gfx; $('camSel').value = s.cam; $('reactSel').value = s.reactLang || 'auto';
   persist();
   $('bkTxt').value = btoa(unescape(encodeURIComponent(JSON.stringify(S))));
@@ -1355,6 +1527,10 @@ function boot(){
   $('camBtn').onclick = cycleCam;
   $('mapBtn').onclick = () => { if (!INTERIOR) openMap(); };
   $('footBtn').onclick = toggleFoot;
+  $('radioBtn').onclick = openRadioPicker; $('radioChip').onclick = openRadioPicker;
+  document.querySelectorAll('#phoneTabs button').forEach(b => b.onclick = () => { PHONE.tab = b.dataset.tab; document.querySelectorAll('#phoneTabs button').forEach(x => x.classList.toggle('on', x === b)); phoneT = 0; $('phoneBody')._h = null; });
+  $('phoneMini').onclick = () => { PHONE.open = !$('phone').classList.contains('open'); $('phone').classList.toggle('open', PHONE.open); };
+  if (IS_TOUCH) $('phone').classList.remove('open');
   $('pResume').onclick = () => setPaused(false);
   $('pMap').onclick = () => { $('pause').classList.add('hidden'); openMap(); };
   $('pGarage').onclick = () => { $('pause').classList.add('hidden'); openGarage(false); };

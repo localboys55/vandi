@@ -87,13 +87,24 @@ function buildTown(city, scene, opts) {
   // road lines for traffic
   rows.forEach(r => W.roadLines.push({axis:'x', fixed:r*T, idx:r, min:0, max:(N-1)*T}));
   cols.forEach(c => W.roadLines.push({axis:'z', fixed:c*T, idx:c, min:0, max:maxRoad*T}));
+  { const pool = (ROADS_CITY[city.id] || []).slice(); const gen = ROADS_GENERIC[city.st].slice().sort(() => R()-0.5);
+    gen.forEach(g => { if (!pool.some(p => p[0] === g[0])) pool.push(g); });
+    let k = 0; W.roadLines.forEach(l => { l.name = pool[k % pool.length]; if (k >= pool.length) l.name = [l.name[0] + ' ' + (Math.floor(k/pool.length)+1), l.name[1] + ' ' + (Math.floor(k/pool.length)+1)]; k++; }); }
+  W.roadAt = (x, z, h) => {
+    const tx = Math.round(x/T), tz = Math.round(z/T);
+    const onRow = rowSet.has(tz) && Math.abs(z - tz*T) < HALF+1, onCol = colSet.has(tx) && Math.abs(x - tx*T) < HALF+1;
+    const alongX = Math.abs(Math.sin(h||0)) > 0.7;
+    if (onRow && (!onCol || alongX)) return W.roadLines.find(l => l.axis === 'x' && l.idx === tz);
+    if (onCol) return W.roadLines.find(l => l.axis === 'z' && l.idx === tx);
+    return null;
+  };
 
   // signals at interior intersections (some)
   rows.slice(1,-1).forEach((r,i) => cols.slice(1,-1).forEach((c,j) => { if ((i+j)%2===0) W.signals.push({tx:c, tz:r, grp:(i+j)%4===0?0:1}); }));
   W.sigSet = new Set(W.signals.map(s => s.tx+','+s.tz));
 
   // --- Points of interest
-  const want = ['busstand','temple','church','mosque','museum','police','hospital','carshow','autoshow','taxishow','busshow','petrol','restaurant','restaurant','tea','textiles','bakery','school','market'];
+  const want = ['busstand','temple','church','mosque','museum','rto','police','hospital','carshow','autoshow','taxishow','busshow','petrol','restaurant','restaurant','tea','textiles','bakery','school','market'];
   if (city.big) want.push('mall','college','rail','restaurant','petrol');
   else if (R() < 0.6) want.push('rail');
   const cand = [];
@@ -213,8 +224,13 @@ function drawGround(W) {
       if (isRoad(tx+1,tz) || tileAt(tx+1,tz)===PUMP) x.fillRect(cx, cz-rh, s/2, rh*2);
       if (isRoad(tx,tz-1) || tileAt(tx,tz-1)===PUMP) x.fillRect(cx-rh, Z, rh*2, s/2);
       if (isRoad(tx,tz+1) || tileAt(tx,tz+1)===PUMP) x.fillRect(cx-rh, cz, rh*2, s/2);
+      for (let k = 0; k < 90; k++) { x.fillStyle = R() < 0.5 ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.07)'; x.fillRect(cx-rh+R()*rh*2, cz-rh+R()*rh*2, 1+R()*2, 1+R()*2); }
+      if (R() < 0.15) { x.fillStyle = 'rgba(30,30,32,.5)'; x.beginPath(); x.ellipse(cx+(R()-0.5)*rh, cz+(R()-0.5)*rh, 3+R()*6, 2+R()*4, R()*3, 0, 7); x.fill(); }
       const h = isRoad(tx-1,tz) && isRoad(tx+1,tz) && !isRoad(tx,tz-1) && !isRoad(tx,tz+1);
       const v = isRoad(tx,tz-1) && isRoad(tx,tz+1) && !isRoad(tx-1,tz) && !isRoad(tx+1,tz);
+      const kerb = (x0,y0,w,hh,horiz) => { const n = Math.floor((horiz?w:hh)/4); for (let k=0;k<n;k++){ x.fillStyle = k%2 ? '#f2c21b' : '#1b1b1b'; horiz ? x.fillRect(x0+k*4,y0,4,hh) : x.fillRect(x0,y0+k*4,w,4); } };
+      if (h) { kerb(X, cz-rh-2.5, s, 2.5, true); kerb(X, cz+rh, s, 2.5, true); }
+      if (v) { kerb(cx-rh-2.5, Z, 2.5, s, false); kerb(cx+rh, Z, 2.5, s, false); }
       x.fillStyle = '#e9e4d0';
       if (h) for (let k=0;k<3;k++) x.fillRect(X+k*s/3+2, cz-1, s/6, 2);
       if (v) for (let k=0;k<3;k++) x.fillRect(cx-1, Z+k*s/3+2, 2, s/6);
@@ -367,21 +383,42 @@ function buildScenery(W, opts) {
   });
   poles.frustumCulled = heads.frustumCulled = false; group.add(poles, heads);
 
-  // traffic signals: one pole per approach; 4 shared light materials (group x axis)
-  W.sigMats = [0,1,2,3].map(() => new THREE.MeshBasicMaterial({color:0x2ecc40}));
-  const sigPoles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1,0.1,4.4,5).translate(0,2.2,0), mat(0x333333), W.signals.length*4);
-  const lightG = new THREE.SphereGeometry(0.3,8,6);
-  const lightLists = [[],[],[],[]];
-  let pi = 0;
-  W.signals.forEach(sg => {
-    const cx = sg.tx*T, cz = sg.tz*T, o = 6.0;
-    [[cx+o,cz-o,'NS'],[cx-o,cz+o,'NS'],[cx-o,cz-o,'EW'],[cx+o,cz+o,'EW']].forEach(([x,z,ax]) => {
-      dummy.position.set(x,0,z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); sigPoles.setMatrixAt(pi++, dummy.matrix);
-      lightLists[sg.grp*2 + (ax==='NS'?0:1)].push([x,4.5,z]);
+  // traffic lights: three-lamp heads (red / amber / green) with hoods on a white backplate, one per approach
+  W.sigLamp = [0,1].map(() => [0,1].map(() => [0x3a0d0d,0x3a2a0a,0x0d3a18].map(c => new THREE.MeshBasicMaterial({color:c}))));
+  if (W.signals.length) {
+    const heads = [];
+    W.signals.forEach(sg => {
+      const cx = sg.tx*T, cz = sg.tz*T, o = 6.0;
+      [[cx+o,cz-o,0,Math.PI],[cx-o,cz+o,0,0],[cx-o,cz-o,1,-Math.PI/2],[cx+o,cz+o,1,Math.PI/2]].forEach(([x,z,ax,ry]) => heads.push({x,z,ax,ry,g:sg.grp}));
     });
-  });
-  sigPoles.frustumCulled = false; if (W.signals.length) group.add(sigPoles);
-  lightLists.forEach((list,k) => { if (!list.length) return; const im = new THREE.InstancedMesh(lightG, W.sigMats[k], list.length); list.forEach((p,i)=>{dummy.position.set(p[0],p[1],p[2]); dummy.updateMatrix(); im.setMatrixAt(i,dummy.matrix);}); im.frustumCulled=false; group.add(im); });
+    const lists = {}; const add = (key, m) => (lists[key] = lists[key] || []).push(m);
+    const H = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+    const local = (x,y,z,rx) => { const q2 = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx||0,0,0)); return new THREE.Matrix4().compose(new THREE.Vector3(x,y,z), q2, new THREE.Vector3(1,1,1)); };
+    heads.forEach(hd => {
+      e.set(0,hd.ry,0); q.setFromEuler(e); H.compose(new THREE.Vector3(hd.x,0,hd.z), q, new THREE.Vector3(1,1,1));
+      add('pole', H.clone().multiply(local(0,0,0)));
+      add('back', H.clone().multiply(local(0,4.0,-0.17)));
+      add('box', H.clone().multiply(local(0,4.0,0)));
+      [0.4,0,-0.4].forEach((dy,ci) => {
+        add('visor', H.clone().multiply(local(0,4.0+dy+0.02,0.27,Math.PI/2)));
+        add('lamp_'+hd.g+'_'+hd.ax+'_'+ci, H.clone().multiply(local(0,4.0+dy,0.15,Math.PI/2)));
+      });
+    });
+    const geos = {
+      pole: new THREE.CylinderGeometry(0.09,0.11,4.7,6).translate(0,2.35,0),
+      back: new THREE.BoxGeometry(0.66,1.55,0.04),
+      box: new THREE.BoxGeometry(0.44,1.32,0.3),
+      visor: new THREE.CylinderGeometry(0.18,0.18,0.24,10,1,true,-Math.PI/2,Math.PI),
+      lamp: new THREE.CylinderGeometry(0.15,0.15,0.03,14),
+    };
+    const mats = { pole: mat(0x6b6f73), back: mat(0xf2f2f2), box: mat(0x161616), visor: new THREE.MeshLambertMaterial({color:0x161616, side:THREE.DoubleSide}) };
+    Object.entries(lists).forEach(([key, arr]) => {
+      let geo, m;
+      if (key.startsWith('lamp_')) { const [,g,a,c] = key.split('_').map(Number); geo = geos.lamp; m = W.sigLamp[g][a][c]; }
+      else { geo = geos[key]; m = mats[key]; }
+      const im = new THREE.InstancedMesh(geo, m, arr.length); arr.forEach((mx,i) => im.setMatrixAt(i, mx)); im.frustumCulled = false; group.add(im);
+    });
+  }
 
   // speed cameras
   const camTex = makeSignTexture(['50','km/h'], '#ffffff', '#c0392b', 128, 128);
@@ -407,6 +444,7 @@ function buildScenery(W, opts) {
 
   // POI landmarks + bilingual signboards
   W.pois.forEach(p => buildPOI(W, p));
+  buildStreetLife(W, byFloors, poiTiles);
   // welcome arch near spawn
   buildArch(W);
   W.festDecor = new THREE.Group(); group.add(W.festDecor);
@@ -459,6 +497,13 @@ function buildPOI(W, p) {
       const dome = new THREE.Mesh(new THREE.SphereGeometry(3,16,10,0,Math.PI*2,0,Math.PI/2), mat(0x1e8449)); dome.position.set(0,5,-1); g.add(dome);
       [-4,4].forEach(x => { const mi = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.6,11,10), white); mi.position.set(x,5.5,3); g.add(mi); const cap = new THREE.Mesh(new THREE.SphereGeometry(0.7,10,8), mat(0x1e8449)); cap.position.set(x,11.2,3); g.add(cap); });
       addBox(g, 2.2,3,0.1, mat(0x145a32), 0,1.5,3.05);
+      break; }
+    case 'rto': {
+      addBox(g, 11,6.4,8, mat(0xeaf2f8), 0,3.2,-1.5);
+      addBox(g, 11.2,0.5,8.2, mat(0x1a5276), 0,6.6,-1.5);
+      for (let i = 0; i < 5; i++) addBox(g, 1.2,1.4,0.1, mat(0x2e4053), -4+i*2,4.2,2.55);
+      addBox(g, 2.2,2.6,0.1, mat(0x5d4037), 0,1.3,2.55);
+      const fp = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,8,5), mat(0xcccccc)); fp.position.set(-5,4,4.5); g.add(fp);
       break; }
     case 'museum': {
       const stone = mat(0xe8e0cc);
@@ -550,7 +595,7 @@ function buildPOI(W, p) {
   const bg = p.col;
   p.sign = signBoard(W, p, [p.en, p.nt], bg, '#ffffff', 6.2, 1.9, p.holy ? 4.2 : 3.6);
   // floating label for holy places & key services (visible from distance)
-  if (p.holy || pt.shop || pt.walkin || p.type === 'petrol' || p.type === 'busstand' || p.type === 'police') {
+  if (p.holy || pt.shop || pt.walkin || p.type === 'rto' || p.type === 'petrol' || p.type === 'busstand' || p.type === 'police') {
     const tex = makeSignTexture([pt.en.toUpperCase(), pt[W.city.st]], bg, '#fff', 512, 160);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, depthTest:true}));
     sp.scale.set(10, 3.1, 1); sp.position.set(p.x, p.type==='temple' && !W.KL ? 21 : 16, p.z); W.group.add(sp);
@@ -632,4 +677,86 @@ function makeRoute(W, startX, startZ, steps, R) {
   // return path back (reverse)
   const back = pts.slice(0,-1).reverse();
   return pts.concat(back);
+}
+
+// Power lines, compound walls, floor ledges, billboards (made-up local brands)
+const ADS = [
+  {en:'Kayal Silks', KL:'കായൽ സിൽക്സ്', TN:'காயல் சில்க்ஸ்', sub:'Wedding sarees since 1985', bg:'#7b1fa2'},
+  {en:'Sree Gold Jewellers', KL:'ശ്രീ ഗോൾഡ് ജ്വല്ലേഴ്സ്', TN:'ஸ்ரீ கோல்டு ஜுவல்லர்ஸ்', sub:'22K hallmark gold', bg:'#b7950b'},
+  {en:'Malabar Pickles', KL:'മലബാർ അച്ചാർ', TN:'மலபார் ஊறுகாய்', sub:'Taste of home', bg:'#c0392b'},
+  {en:'Vandi Ride', KL:'വണ്ടി റൈഡ്', TN:'வண்டி ரைட்', sub:'Drive with us · Earn more', bg:'#0f3b2e'},
+  {en:'Ponni Rice', KL:'പൊന്നി അരി', TN:'பொன்னி அரிசி', sub:'Fresh from the fields', bg:'#1e8449'},
+  {en:'Thendral Mobiles', KL:'തെന്നൽ മൊബൈൽസ്', TN:'தென்றல் மொபைல்ஸ்', sub:'Latest phones · Easy EMI', bg:'#1f618d'},
+  {en:'Nila Coconut Oil', KL:'നിലാ വെളിച്ചെണ്ണ', TN:'நிலா தேங்காய் எண்ணெய்', sub:'Pure & natural', bg:'#117a65'},
+  {en:'Drive Safe', KL:'സുരക്ഷിതമായി ഓടിക്കുക', TN:'பாதுகாப்பாக ஓட்டுங்கள்', sub:'Wear your seatbelt', bg:'#d35400'},
+];
+function lerpW(a,b,t){ return a+(b-a)*t; }
+function buildStreetLife(W, byFloors, poiTiles){
+  const {N, tileAt, R, KL, group} = W;
+  const dummy = new THREE.Object3D();
+  const ledges = [];
+  for (let f = 2; f <= 4; f++) byFloors[f].forEach(b => { for (let k = 1; k < f; k++) ledges.push([b.x, k*3.2, b.z, b.w+0.6, b.d+0.6]); });
+  if (ledges.length) {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1,0.16,1), mat(0xdcd6c8), ledges.length);
+    ledges.forEach((l,i) => { dummy.position.set(l[0],l[1],l[2]); dummy.rotation.set(0,0,0); dummy.scale.set(l[3],1,l[4]); dummy.updateMatrix(); im.setMatrixAt(i,dummy.matrix); });
+    im.frustumCulled = false; group.add(im);
+  }
+  const walls = [];
+  for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
+    if (tileAt(tx,tz) !== BUILD || poiTiles.has(tx+','+tz)) continue;
+    [[0,-1],[0,1],[-1,0],[1,0]].forEach(([dx,dz]) => {
+      if (!W.isRoad(tx+dx,tz+dz)) return;
+      const ex = tx*T + dx*(HALF-1.0), ez = tz*T + dz*(HALF-1.0);
+      const along = dx === 0;
+      [-1,1].forEach(sd => { const off = sd*3.6; walls.push([ex + (along?off:0), ez + (along?0:off), along?4.6:0.25, along?0.25:4.6]); });
+    });
+  }
+  if (walls.length) {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1,1.2,1).translate(0,0.6,0), mat(KL ? 0xb8573a : 0xe8dcc0), walls.length);
+    walls.forEach((w,i) => { dummy.position.set(w[0],0,w[1]); dummy.rotation.set(0,0,0); dummy.scale.set(w[2],1,w[3]); dummy.updateMatrix(); im.setMatrixAt(i,dummy.matrix); });
+    im.frustumCulled = false; group.add(im);
+  }
+  const poles = [], wires = [];
+  W.roadLines.forEach(l => {
+    const pts = [];
+    for (let k = 0; k < N; k++) {
+      const tx = l.axis === 'x' ? k : l.idx, tz = l.axis === 'x' ? l.idx : k;
+      if (!W.isRoad(tx,tz) || W.isInter(tx,tz) || k % 2) continue;
+      const x = tx*T + (l.axis === 'z' ? -6.4 : 0), z = tz*T + (l.axis === 'x' ? -6.4 : 0);
+      pts.push([x,z]); poles.push([x,z,l.axis]);
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const [x0,z0] = pts[i-1], [x1,z1] = pts[i];
+      if (Math.hypot(x1-x0, z1-z0) > T*2.5) continue;
+      [-0.7,0,0.7].forEach(o => {
+        const ox = l.axis === 'x' ? 0 : o, oz = l.axis === 'x' ? o : 0;
+        let px = x0+ox, py = 8.3, pz = z0+oz;
+        for (let s2 = 1; s2 <= 6; s2++) { const t = s2/6; const nx = lerpW(x0,x1,t)+ox, nz = lerpW(z0,z1,t)+oz, ny = 8.3 - Math.sin(t*Math.PI)*0.8; wires.push(px,py,pz,nx,ny,nz); px = nx; py = ny; pz = nz; }
+      });
+    }
+  });
+  if (poles.length) {
+    const pm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12,0.17,8.6,6).translate(0,4.3,0), mat(0x9a9a92), poles.length);
+    const cb = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8,0.12,0.12), mat(0x707070), poles.length);
+    poles.forEach((p,i) => { dummy.position.set(p[0],0,p[1]); dummy.rotation.set(0, p[2] === 'x' ? Math.PI/2 : 0, 0); dummy.scale.set(1,1,1); dummy.updateMatrix(); pm.setMatrixAt(i,dummy.matrix); dummy.position.y = 8.3; dummy.updateMatrix(); cb.setMatrixAt(i,dummy.matrix); });
+    pm.frustumCulled = cb.frustumCulled = false; group.add(pm, cb);
+    const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
+    const wl = new THREE.LineSegments(wg, new THREE.LineBasicMaterial({color:0x222222, transparent:true, opacity:0.7})); wl.frustumCulled = false; group.add(wl);
+  }
+  const spots = [];
+  const maxB = W.city.big ? 9 : 6;
+  for (let tz = 1; tz < N-1 && spots.length < maxB; tz += 3) for (let tx = 1; tx < N-1 && spots.length < maxB; tx += 4) {
+    if (tileAt(tx,tz) !== BUILD || poiTiles.has(tx+','+tz) || R() > 0.3) continue;
+    const ds = [[0,-1],[0,1],[-1,0],[1,0]].filter(([dx,dz]) => W.isRoad(tx+dx,tz+dz)); if (!ds.length) continue;
+    spots.push({tx,tz,d:ds[0]});
+  }
+  spots.forEach((sp,i) => {
+    const ad = ADS[(hashStr(W.city.id) + i) % ADS.length];
+    const tex = makeSignTexture([ad[W.city.st], ad.en, ad.sub], ad.bg, '#fff', 768, 384);
+    const g = new THREE.Group(); g.position.set(sp.tx*T + sp.d[0]*4.5, 0, sp.tz*T + sp.d[1]*4.5); g.rotation.y = Math.atan2(sp.d[0], sp.d[1]);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(7,3.5), new THREE.MeshBasicMaterial({map:tex})); board.position.y = 8.2; g.add(board);
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(7,3.5), mat(0x444444)); back.rotation.y = Math.PI; back.position.set(0,8.2,-0.02); g.add(back);
+    [-2.6,2.6].forEach(x => { const post = new THREE.Mesh(new THREE.BoxGeometry(0.25,6.5,0.25), mat(0x555555)); post.position.set(x,3.25,-0.15); g.add(post); });
+    group.add(g);
+  });
 }

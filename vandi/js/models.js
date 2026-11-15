@@ -37,6 +37,8 @@ function makeVehicle(kind, def, colors) {
     addBox(g, 1.42,0.62,1.25, body, 0,0.86,-0.68);
     addBox(g, 1.0,0.9,0.35, body, 0,0.95,1.12);
     addBox(g, 1.5,0.1,2.3, top, 0,2.02,-0.08);
+    if (def.style === 'modern') { addBox(g, 1.52,0.06,2.32, mat(0xdddddd), 0,2.1,-0.08); }
+    if (def.style === 'electric') { addBox(g, 1.44,0.1,1.27, mat(0x2ecc71), 0,1.0,-0.68); }
     addBox(g, 1.5,0.95,0.1, top, 0,1.55,-1.28);
     [[-0.66,0.95],[0.66,0.95],[-0.7,-0.2],[0.7,-0.2]].forEach(([x,z])=>addBox(g,0.07,1.0,0.07,trim,x,1.5,z));
     addBox(g, 1.3,0.18,0.55, seat, 0,1.2,-0.75);
@@ -56,10 +58,15 @@ function makeVehicle(kind, def, colors) {
     ud.headY = 1.25; ud.paint = [body, top];
   } else if (kind === 'bus') {
     const body = mat(c1), band = mat(c2), dark = mat(0x1f2a33);
-    addBox(g, wid,2.5,len, body, 0,1.65,0);
+    const dd = def.style === 'dd';
+    const bh = dd ? 4.2 : 2.5;
+    addBox(g, wid,bh,len, body, 0,0.4+bh/2,0);
     addBox(g, wid+0.02,0.25,len*0.98, band, 0,0.75,0);
-    addBox(g, wid+0.03,0.95,len*0.82, dark, 0,2.15,-len*0.05);
-    addBox(g, wid*0.98,0.15,len*0.98, band, 0,2.95,0);
+    addBox(g, wid+0.03,def.style === 'sleeper' ? 0.55 : 0.95,len*0.82, dark, 0,2.15,-len*0.05);
+    if (dd) addBox(g, wid+0.03,0.9,len*0.9, dark, 0,3.75,0);
+    addBox(g, wid*0.98,0.15,len*0.98, band, 0,0.45+bh,0);
+    if (def.style === 'electric') addBox(g, wid*0.6,0.3,len*0.5, mat(0x7fb3d5), 0,0.6+bh,0);
+    if (def.style === 'express' || def.style === 'sleeper') addBox(g, wid+0.04,0.12,len*0.95, mat(c2), 0,1.35,0);
     addBox(g, wid*0.9,1.1,0.06, GLASS(), 0,2.15,len/2+0.02, 'front');
     addBox(g, wid*0.8,0.8,0.06, GLASS(), 0,2.2,-len/2-0.02, 'rear');
     addBox(g, 0.35,0.22,0.08, headM, -wid*0.36,0.95,len/2+0.04, 'front');
@@ -79,14 +86,16 @@ function makeVehicle(kind, def, colors) {
     ud.headY = 0.9;
   } else {
     // cars, taxis, police
-    const suv = def.id === 'taxi3' || def.lux === 'suv';
-    const sporty = def.id === 'car3' || def.id === 'car4' || def.id === 'car5' || def.lux === 'super' || def.lux === 'hyper';
-    const bodyH = suv ? 0.85 : def.lux === 'hyper' ? 0.42 : (sporty ? 0.5 : 0.62);
+    const st = def.style;
+    const suv = def.id === 'taxi3' || def.lux === 'suv' || st === 'suv' || st === 'mpv';
+    const sporty = def.id === 'car3' || def.id === 'car4' || def.id === 'car5' || def.lux === 'super' || def.lux === 'hyper' || st === 'coupe' || st === 'super' || st === 'hyper';
+    const bodyH = suv ? (st === 'mpv' ? 0.95 : 0.85) : (def.lux === 'hyper' || st === 'hyper') ? 0.42 : (sporty ? 0.5 : st === 'retro' ? 0.7 : 0.62);
     const body = mat(kind === 'police' ? 0xf4f6f7 : c1), trim = mat(kind === 'police' ? 0x1f3a93 : c2);
     const y0 = 0.32 + bodyH/2;
     addBox(g, wid,bodyH,len, body, 0,y0,0);
-    const cabH = suv ? 0.7 : (sporty ? 0.42 : 0.55);
-    const cabL = len*(sporty?0.42:0.5);
+    const cabH = suv ? 0.7 : (sporty ? 0.42 : st === 'retro' ? 0.62 : 0.55);
+    const cabL = st === 'pickup' ? len*0.32 : st === 'mpv' ? len*0.66 : st === 'hatch' ? len*0.55 : len*(sporty?0.42:0.5);
+    if (st === 'pickup') { addBox(g, wid*0.96,0.35,len*0.42, mat(c2), 0,0.32+bodyH+0.17,-len*0.27); }
     addBox(g, wid*0.86,cabH,cabL, mat(0x1f2a33), 0,y0+bodyH/2+cabH/2,-len*0.06);
     addBox(g, wid*0.88,0.06,cabL*0.9, body, 0,y0+bodyH/2+cabH+0.02,-len*0.06);
     if (kind === 'police') {
@@ -217,4 +226,27 @@ function makeDog() {
   addBox(g, 0.26,0.26,0.32, m, 0,0.78,0.5);
   addBox(g, 0.06,0.06,0.35, m, 0,0.7,-0.5).rotation.x = -0.6;
   return g;
+}
+
+// Text panel on the back of the player's vehicle: city, district, state
+function rearPanelTexture(t, plate){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#111'; x.fillRect(0,0,512,256);
+  x.fillStyle = '#f4d03f'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  const fit = (txt, y, size, w, font) => { let s2 = size; do { x.font = '800 ' + s2 + 'px ' + font; s2 -= 2; } while (x.measureText(txt).width > w && s2 > 12); x.fillText(txt, 256, y); };
+  fit(t.nt, 52, 60, 500, '"Baloo Chettan 2","Baloo Thambi 2",sans-serif');
+  x.fillStyle = '#ffffff'; fit(t.en, 122, 44, 500, '"Baloo Chettan 2",sans-serif');
+  x.fillStyle = '#f7f3e3'; x.fillRect(96,168,320,78); x.strokeStyle = '#222'; x.lineWidth = 5; x.strokeRect(96,168,320,78);
+  x.fillStyle = '#111'; x.font = '800 50px "Share Tech Mono",monospace'; x.fillText(plate, 256, 209);
+  const tx = new THREE.CanvasTexture(c); tx.anisotropy = 4; return tx;
+}
+function attachRearPanel(veh, city, plate){
+  const ud = veh.userData; if (ud.rear) { veh.remove(ud.rear); ud.rear.material.map.dispose(); }
+  const k = ud.kind, L = ud.len, Wd = ud.wid;
+  let w, h, y, z;
+  if (k === 'auto') { w = 1.3; h = 0.65; y = 1.3; z = -1.345; }
+  else if (k === 'bus') { w = Wd*0.85; h = w/2; y = 1.2; z = -L/2 - 0.05; }
+  else { w = Wd*0.7; h = w/2; y = 0.75; z = -L/2 - 0.09; }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({map: rearPanelTexture(rearText(city), plate)}));
+  m.position.set(0, y, z); m.rotation.y = Math.PI; veh.add(m); ud.rear = m;
 }
