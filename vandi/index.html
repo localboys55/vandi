@@ -46,6 +46,9 @@ canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
 .tagline{margin:8px 0 14px;font-size:15px}
 .acct{display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 14px;margin:6px 0;border-radius:12px;border:2px solid var(--gold);background:#fffaf0;font:inherit;cursor:pointer;text-align:left}
 .acct span{font-size:13px;opacity:.8}
+.accRow{display:flex;gap:6px;align-items:center}.accRow .acct{flex:1}
+.accDel{width:44px;height:48px;border-radius:12px;border:2px solid #e6b0a8;background:#fff3f1;font-size:18px;cursor:pointer}
+.btn.danger{background:linear-gradient(#ff8a7a,#e74c3c);border-color:#922b21;color:#fff;box-shadow:0 3px 0 #922b21}
 .field{display:block;margin:8px 0;font-weight:600;font-size:14px}
 .field input,.field select,textarea,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:2px solid #d8c88c;background:#fff;margin-top:3px}
 textarea{font-family:"Share Tech Mono",monospace;font-size:11px;resize:none;user-select:text;-webkit-user-select:text}
@@ -120,7 +123,7 @@ hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
 #bubbles{position:absolute;inset:0;overflow:hidden}
 .sb{position:absolute;transform:translate(-50%,-100%);background:#fff;border:3px solid #e74c3c;border-radius:14px;padding:4px 11px;font-weight:800;font-size:15px;white-space:nowrap;color:#222;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
 .sb:after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-8px;border:8px solid transparent;border-top-color:inherit;border-bottom:0}
-.sb.angry,.sb.crash,.sb.cow,.sb.dog{border-color:#e74c3c;animation:shake .35s 2}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}
+.sb.angry,.sb.crash,.sb.cow,.sb.dog,.sb.hurt{border-color:#e74c3c;animation:shake .35s 2}.sb.hurt{background:#fff0ee}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}
 @keyframes shake{25%{margin-left:-3px}75%{margin-left:3px}}
 #toasts{position:absolute;top:110px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(60vw,460px)}
 .toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
@@ -254,13 +257,13 @@ body.touch #toasts{top:70px}
     <p class="tagline">Drive autos, taxis, buses and cars through all 52 district headquarters of Kerala and Tamil Nadu. Earn fares, buy better vehicles, and stay ahead of the police.</p>
     <div id="accList"></div>
     <hr>
-    <b>Create an account</b>
+    <b>➕ Add an account</b>
     <label class="field">Driver name <input id="newName" maxlength="20" autocomplete="off"></label>
     <label class="field">4-digit PIN <input id="newPin" maxlength="4" inputmode="numeric" type="password" autocomplete="off"></label>
     <label class="field">Start in <select id="startCity"></select></label>
     <div class="err" id="newErr"></div>
     <div class="row"><button class="btn" id="newGo">Create & play</button><button class="btn ghost hidden" id="installBtn">📲 Install app</button></div>
-    <p class="small">Accounts and progress are saved on this phone. The PIN stops others on the same phone opening your save. It isn't strong security. Settings has a backup code you can use to move your save.</p>
+    <p class="small">Add as many accounts as you like. Tap 🗑 next to an account to delete it (needs its PIN). Accounts and progress are saved on this phone. The PIN stops others on the same phone opening your save. It isn't strong security. Settings has a backup code you can use to move your save.</p>
     <div class="keys">Keyboard: W/↑ go · S/↓ brake · A/D steer · H horn · F get out / in · E action · R radio · C camera · M map · P pause. Gamepads work too.</div>
   </div>
   <div id="pinBox" class="screen hidden"><div class="card" style="max-width:340px">
