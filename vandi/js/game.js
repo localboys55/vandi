@@ -29,7 +29,7 @@ function accounts(){ return store.get(ACC_KEY) || {list:[]}; }
 function defaultSave(name){
   return {v:1, name, money:500, owned:['auto1'], active:'auto1', damage:0, city:'ekm', pos:null, day:1, min:7*60,
     stats:{trips:0, busPax:0, earned:0, fines:0, busts:0, escapes:0, km:0, cities:['ekm']},
-    settings:{gfx: IS_TOUCH ? 'low' : 'high', sound:true, cam:'chase', reactions:true, reactLang:'auto', voices:true}, updatedAt:Date.now(),
+    settings:{gfx: IS_TOUCH ? 'low' : 'high', sound:true, cam:'chase', reactions:true, reactLang:'auto', voices:true, traffic:'normal'}, updatedAt:Date.now(),
     docs: defaultDocs(1), fatigue: 0, reviews: [], rating: {sum: 0, n: 0}, today: {day: 1, earned: 0, fines: 0, trips: 0, night: 0},
     plate: null, nextCheck: 0};
 }
@@ -110,7 +110,7 @@ function disposeTown(){
   if (!W) return;
   scene.remove(W.group);
   W.group.traverse(o => { if (o.material && o.material.map && o.material.map.isCanvasTexture) o.material.map.dispose(); if (o.isInstancedMesh) o.geometry.dispose(); });
-  [...NPCS, ...POLICE].forEach(n => scene.remove(n.mesh));
+  [...NPCS, ...POLICE].forEach(n => { scene.remove(n.mesh); if (n.out) scene.remove(n.out.mesh); });
   PEDS.forEach(p => scene.remove(p.mesh)); ANIMALS.forEach(a => scene.remove(a.mesh));
   DEBRIS.forEach(d => scene.remove(d.m)); WAITING.forEach(w => { scene.remove(w.mesh); scene.remove(w.beam); });
   CROWDS.forEach(c => c.meshes.forEach(m => scene.remove(m)));
@@ -194,19 +194,27 @@ const NPC_TYPES = [
   {k:'bus', def:{len:10.5,wid:2.5,id:'npc'}, w:2}, {k:'bike', def:{len:1.9,wid:0.6,id:'npc'}, w:4}, {k:'taxi', def:{len:4.2,wid:1.75,id:'npc'}, w:2},
 ];
 const NPC_COLORS = [[0xd0d3d4,0x222222],[0x7b241c,0x222],[0x1a5276,0x111],[0xf4f4f0,0x333],[0x145a32,0x111],[0x6e2c00,0x222],[0x34495e,0x111]];
+const TRAFFIC_LEVELS = {light:{k:0.6, label:'Light'}, normal:{k:1, label:'Normal'}, heavy:{k:1.7, label:'Heavy'}, rush:{k:2.5, label:'Rush hour'}};
+function trafficCount(){ return Math.round((W.city.big ? 26 : 18) * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); }
+function respawnTraffic(){ NPCS.forEach(n => { scene.remove(n.mesh); if (n.out) scene.remove(n.out.mesh); }); NPCS = []; spawnTraffic(); }
 function spawnTraffic(){
-  const count = (W.city.big ? 26 : 18) * (S.settings.gfx === 'high' ? 1 : 0.75);
+  const count = trafficCount();
+  const lanes = [];
+  W.roadLines.forEach((ln,i) => { lanes.push([i,1]); lanes.push([i,-1]); });
+  lanes.sort(() => Math.random()-0.5);
   const combos = [];
-  W.roadLines.forEach((ln,i) => { combos.push([i,1]); combos.push([i,-1]); });
-  combos.sort(() => Math.random()-0.5);
+  for (let k = 0; combos.length < count; k++) { combos.push(lanes[k % lanes.length]); if (k > 400) break; }
+  const perLane = {};
   const total = NPC_TYPES.reduce((a,t)=>a+t.w,0);
-  for (let i = 0; i < Math.min(count, combos.length); i++) {
+  for (let i = 0; i < combos.length; i++) {
     let r = Math.random()*total, tp = NPC_TYPES[0];
     for (const t of NPC_TYPES) { if ((r -= t.w) < 0) { tp = t; break; } }
     const cols = tp.k === 'auto' ? [[0xf2c21b,0x1d1d1d],[0x2f8f3a,0xf2c21b]][i%2] : tp.k === 'bus' ? [[0xc0392b,0xf4efe0],[0x1f8f6f,0xf4efe0],[0x2c3e8f,0xf2c21b],[0xd35400,0xf4efe0]][i%4] : tp.k === 'taxi' ? [0xf2d21b,0x222222] : pick(NPC_COLORS);
     const mesh = makeVehicle(tp.k, tp.def, cols); scene.add(mesh);
     const [li, dir] = combos[i]; const line = W.roadLines[li];
-    const n = {mesh, line, dir, s: rnd(line.min, line.max), v:0, cruise: (tp.k==='bus'?9:tp.k==='bike'?12:11) + rnd(-1.5,1.5), len: tp.def.len, wid: tp.def.wid, kind: tp.k, x:0, z:0, h:0, blocked:0};
+    const key = li + ':' + dir, slot = perLane[key] = (perLane[key] || 0) + 1;
+    const span = Math.max(1, line.max - line.min);
+    const n = {mesh, line, dir, s: line.min + ((hashStr(key) % 1000)/1000*span + slot*span/Math.max(2, Math.ceil(count/lanes.length)+1)) % span, v:0, pull:0, cruise: (tp.k==='bus'?9:tp.k==='bike'?12:11) + rnd(-1.5,1.5), len: tp.def.len, wid: tp.def.wid, kind: tp.k, x:0, z:0, h:0, blocked:0};
     placeNpc(n, 0);
     // avoid spawning on top of the player
     if (Math.hypot(n.x-P.x, n.z-P.z) < 25) n.s = (n.s + 120) % (line.max || 1);
@@ -220,7 +228,7 @@ function lightState(tx, tz, axis){
   return t < 15 ? 'R' : t < 27 ? 'G' : 'Y';
 }
 function placeNpc(n){
-  const L = n.line, lane = 2.3;
+  const L = n.line, lane = 2.3 + (n.pull || 0);
   if (L.axis === 'x') { n.x = n.s; n.z = L.fixed - lane*n.dir; n.h = n.dir > 0 ? Math.PI/2 : -Math.PI/2; }
   else { n.x = L.fixed + lane*n.dir; n.z = n.s; n.h = n.dir > 0 ? 0 : Math.PI; }
   n.mesh.position.set(n.x, 0, n.z); n.mesh.rotation.y = n.h;
@@ -238,8 +246,17 @@ function obstacleAhead(x, z, h, range, lat, self){
 }
 function updateTraffic(dt){
   for (const n of NPCS) {
-    let target = n.cruise * (n.honked > simT ? 1.5 : 1);
+    let target = n.cruise * (n.honked > simT ? 1.4 : 1);
     const L = n.line;
+    n.pull += clamp((n.pullOver > simT ? 1.5 : 0) - n.pull, -dt*1.2, dt*1.8);
+    if (n.out) {
+      target = 0;
+      const o = n.out;
+      o.mesh.userData.arms[1].rotation.x = -2.6 + Math.sin(simT*9)*0.5;
+      o.mesh.lookAt(me().x, 0, me().z);
+      if (simT > o.nextSay && o.says > 0) { o.says--; o.nextSay = simT + 2.2; o._saidT = 0; speak(o, o.says === 2 ? 'crash' : 'angry', 2.2); }
+      if (simT > o.until) { scene.remove(o.mesh); n.out = null; }
+    }
     // traffic lights
     const sigList = L.axis === 'x' ? W.signals.filter(s => s.tz === L.idx).map(s => s.tx) : W.signals.filter(s => s.tx === L.idx).map(s => s.tz);
     for (const k of sigList) {
@@ -249,7 +266,7 @@ function updateTraffic(dt){
         if (st === 'R' || (st === 'Y' && ahead > 4)) target = Math.min(target, Math.max(0, ahead - 0.5) * 0.9);
       }
     }
-    const obs = obstacleAhead(n.x, n.z, n.h, n.len/2 + 14, n.wid/2 + 0.3, n);
+    const obs = n.pull > 0.6 ? 1e9 : obstacleAhead(n.x, n.z, n.h, n.len/2 + 14, n.wid/2 + 0.3, n);
     if (obs < n.len/2 + 14) target = Math.min(target, Math.max(0, (obs - n.len/2 - 3.5)) * 0.9);
     n.v += clamp(target - n.v, -9*dt, 3*dt);
     if (n.v < 0.3 && target < 0.3) n.blocked += dt; else n.blocked = 0;
@@ -449,7 +466,7 @@ function vehicleVsPlayer(o, isPolice){
         breakParts(o.mesh, oSide, nParts, scene, DEBRIS, {x:px*2, z:pz*2});
         S.damage = clamp(S.damage + rel*2, 0, 100);
         if (RIDER) RIDER.comfort -= 20;
-        if (!isPolice) speak(o, rel > 6 ? 'crash' : 'angry', vehH(o));
+        if (!isPolice) { if (rel > 5) driverOut(o); else speak(o, 'angry', vehH(o)); }
         if (isPolice) addWanted(1, 'Rammed a police car');
         else if (rel > 6) { const cost = Math.round(rel*8); S.money -= cost; toast('Crash! Other driver wants ' + money(cost) + ' for repairs', 'bad'); }
       }
@@ -469,6 +486,16 @@ function pushFromVehicle(F, o, r){
     return true;
   }
   return false;
+}
+function driverOut(n){
+  if (n.out || INTERIOR || n.kind === 'police') return;
+  const f = fwd(n.h), right = {x:-f.z, z:f.x};
+  const side = n.kind === 'bike' ? 0.6 : n.wid/2 + 0.7;
+  const mesh = makePerson(); scene.add(mesh);
+  const x = n.x + right.x*side, z = n.z + right.z*side;
+  mesh.position.set(x, 0, z);
+  n.out = {mesh, x, z, until: simT + 7, nextSay: simT + 0.3, says: 3, _saidT: 0};
+  n.v = 0;
 }
 function ownerShout(a, kind){ const by = PEDS.filter(pd => pd.down <= 0).sort((p,q) => Math.hypot(p.x-a.x,p.z-a.z) - Math.hypot(q.x-a.x,q.z-a.z))[0]; if (by && Math.hypot(by.x-a.x, by.z-a.z) < 45) { by._saidT = 0; speak(by, kind); } else { a._saidT = 0; speak(a, kind, 2.2); } }
 function crashFx(sp){ playNoise(0.25, 0.5 + Math.min(0.5, sp/30), 300); }
@@ -1014,6 +1041,8 @@ function honkReact(){
     const al = dx*f.x + dz*f.z, lat = Math.abs(dx*f.z - dz*f.x);
     if (al <= 0 || lat > 5) return;
     n.honked = simT + 4;
+    // same direction as you -> pull over to the kerb to let you pass
+    const nf = fwd(n.h); if (nf.x*f.x + nf.z*f.z > 0.5 && !n.out) n.pullOver = simT + 5;
     if (!said && Math.random() < 0.35) { speak(n, 'horn', vehH(n)); said = true; }
   });
 }
@@ -1544,6 +1573,7 @@ function openSettings(){
   showModal('<h2>⚙ Settings</h2>' +
     '<label class="row">Graphics <select id="gfxSel"><option value="low">Smooth (phones)</option><option value="high">Sharp (laptops)</option></select></label>' +
     '<label class="row">Camera <select id="camSel"><option value="chase">Behind</option><option value="high">High</option><option value="cab">Driver seat</option></select></label>' +
+    '<label class="row">Traffic <select id="trafSel">' + Object.entries(TRAFFIC_LEVELS).map(([k,v]) => '<option value="' + k + '">' + v.label + '</option>').join('') + '</select></label>' +
     '<label class="row">Sound <input type="checkbox" id="sndChk"' + (s.sound ? ' checked' : '') + '></label>' +
     '<label class="row">People react (speech bubbles) <input type="checkbox" id="reactChk"' + (s.reactions !== false ? ' checked' : '') + '></label>' +
     '<label class="row">Hear people shout (voice) <input type="checkbox" id="voiceChk"' + (s.voices !== false ? ' checked' : '') + '></label>' +
@@ -1552,8 +1582,8 @@ function openSettings(){
     '<h3>Backup</h3><p class="small">Your progress is saved on this device. To move it to another phone or keep a copy, copy this backup code and keep it somewhere safe.</p>' +
     '<textarea id="bkTxt" rows="3" readonly></textarea><div class="row"><button class="btn small" id="bkCopy">Copy code</button></div>' +
     '<p class="small">Restore from a code (replaces this account\'s progress):</p><textarea id="rsTxt" rows="2" placeholder="Paste a backup code"></textarea><div class="row"><button class="btn small ghost" id="rsGo">Restore</button><span id="rsMsg" class="small"></span></div>',
-    [{t:'Done', f:() => { s.gfx = $('gfxSel').value; s.cam = $('camSel').value; s.sound = $('sndChk').checked; s.reactions = $('reactChk').checked; s.voices = $('voiceChk').checked; s.reactLang = $('reactSel').value; setSound(s.sound); applyGfx(); persist(); closeModal(); setPaused(true); }}]);
-  $('gfxSel').value = s.gfx; $('camSel').value = s.cam; $('reactSel').value = s.reactLang || 'auto';
+    [{t:'Done', f:() => { s.gfx = $('gfxSel').value; s.cam = $('camSel').value; const oldT = s.traffic || 'normal'; s.traffic = $('trafSel').value; if (s.traffic !== oldT && W) respawnTraffic(); s.sound = $('sndChk').checked; s.reactions = $('reactChk').checked; s.voices = $('voiceChk').checked; s.reactLang = $('reactSel').value; setSound(s.sound); applyGfx(); persist(); closeModal(); setPaused(true); }}]);
+  $('gfxSel').value = s.gfx; $('camSel').value = s.cam; $('trafSel').value = s.traffic || 'normal'; $('reactSel').value = s.reactLang || 'auto';
   persist();
   $('bkTxt').value = btoa(unescape(encodeURIComponent(JSON.stringify(S))));
   $('bkCopy').onclick = () => { $('bkTxt').select(); (navigator.clipboard ? navigator.clipboard.writeText($('bkTxt').value) : Promise.reject()).then(() => $('rsMsg').textContent = 'Copied', () => { try { document.execCommand('copy'); $('rsMsg').textContent = 'Copied'; } catch(e) { $('rsMsg').textContent = 'Select the text and copy it'; } }); };
