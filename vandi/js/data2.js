@@ -189,3 +189,70 @@ function stationsFor(city){
   list.push(loc);
   return list;
 }
+
+// ---------- Even more reactions (index-aligned across languages) ----------
+REACT.angry.en.push('Watch the road, not your phone!','This isn\'t a race track!','Who gave you a licence?','Use your brakes!','You almost hit me!','Have some sense!','Go slow, there are kids here!');
+REACT.angry.mg.push('Road-il nokki odikkada!','Ithu race track alla!','Ninakku aaraada licence thannathu?','Brake chavittu!','Ippo enne idichene!','Kurachu bodham venam!','Pathukke po, ivide pillerundu!');
+REACT.angry.ml.push('റോഡിൽ നോക്കി ഓടിക്കെടാ!','ഇത് റേസ് ട്രാക്ക് അല്ല!','നിനക്ക് ആരാടാ ലൈസൻസ് തന്നത്?','ബ്രേക്ക് ചവിട്ട്!','ഇപ്പോ എന്നെ ഇടിച്ചേനെ!','കുറച്ച് ബോധം വേണം!','പതുക്കെ പോ, ഇവിടെ പിള്ളേരുണ്ട്!');
+REACT.angry.tg.push('Road-a paathu ottu!','Idhu race track illa!','Unakku yaaru license kuduthaa?','Brake podu!','Ippo enna idichiruppa!','Konjam arivu venum!','Medhuva po, inga pasanga irukaanga!');
+REACT.angry.ta.push('ரோட்டை பார்த்து ஓட்டு!','இது ரேஸ் ட்ராக் இல்ல!','உனக்கு யாரு லைசென்ஸ் குடுத்தா?','பிரேக் போடு!','இப்போ என்னை இடிச்சிருப்ப!','கொஞ்சம் அறிவு வேணும்!','மெதுவா போ, இங்க பசங்க இருக்காங்க!');
+REACT.crash.en.push('Look what you did to my car!','Pay for the damage!','Are you mad?!','My headlight is gone!');
+REACT.crash.mg.push('Ente vandi nokku, enthaa cheythathu!','Damage-inu kaashu tharanam!','Ninakku vattaano?!','Ente headlight poyi!');
+REACT.crash.ml.push('എന്റെ വണ്ടി നോക്ക്, എന്താ ചെയ്തത്!','ഡാമേജിന് കാശ് തരണം!','നിനക്ക് വട്ടാണോ?!','എന്റെ ഹെഡ്‌ലൈറ്റ് പോയി!');
+REACT.crash.tg.push('En vandiya paaru, enna pannitta!','Damage-ku kaasu kudu!','Unakku paithiyamaa?!','En headlight poyiduchu!');
+REACT.crash.ta.push('என் வண்டியை பாரு, என்ன பண்ணிட்ட!','டேமேஜுக்கு காசு குடு!','உனக்கு பைத்தியமா?!','என் ஹெட்லைட் போயிடுச்சு!');
+REACT.horn.en.push('Okay okay, I\'m moving!','Why such a hurry?','Patience, patience!');
+REACT.horn.mg.push('Shari shari, maarunnu!','Enthinaa ithra thidukkam?','Kshama venam!');
+REACT.horn.ml.push('ശരി ശരി, മാറുന്നു!','എന്തിനാ ഇത്ര തിടുക്കം?','ക്ഷമ വേണം!');
+REACT.horn.tg.push('Seri seri, nagarren!','Enna avasaram?','Porumai, porumai!');
+REACT.horn.ta.push('சரி சரி, நகர்றேன்!','என்ன அவசரம்?','பொறுமை, பொறுமை!');
+REACT.hurt = {
+  en:['Aaah, my leg!','Ouch! That hurt!','Somebody call an ambulance!','You hit me!','Stop! You hit me!'],
+  mg:['Ayyo ente kaalu!','Ammo, vedanikkunnu!','Aarenkilum ambulance vilikku!','Nee enne idichu!','Nirthada! Nee enne idichu!'],
+  ml:['അയ്യോ എന്റെ കാല്!','അമ്മോ, വേദനിക്കുന്നു!','ആരെങ്കിലും ആംബുലൻസ് വിളിക്ക്!','നീ എന്നെ ഇടിച്ചു!','നിർത്തെടാ! നീ എന്നെ ഇടിച്ചു!'],
+  tg:['Aiyo en kaalu!','Amma, valikkudhu!','Yaaraavadhu ambulance koopdunga!','Nee enna idichitta!','Niruthu! Nee enna idichitta!'],
+  ta:['ஐயோ என் காலு!','அம்மா, வலிக்குது!','யாராவது ஆம்புலன்ஸ் கூப்பிடுங்க!','நீ என்னை இடிச்சிட்ட!','நிறுத்து! நீ என்னை இடிச்சிட்ட!'],
+};
+
+// ---------- Radio: made-up artists & genres, news ----------
+const ARTISTS = {
+  KL: ['Arjun Ravi','Meera Nair','Kayal Collective','Nikhil Thomas','Anjali Menon','The Monsoon Band','Rahul Krishnan','Sneha Joseph','Malabar Rhythm Co.','Vishnu Prasad','Fathima Beevi','Thira Project','Aswin & the Backwaters','Diya Mariam','Kochi Night Shift'],
+  TN: ['Arun Selvan','Kaviya Murugan','Madras Beat Crew','Senthil Prabhu','Divya Lakshmi','Kongu Folk Collective','Nila Ganesan','Thendral Trio','Iniyan Raj','Marina Sound System','Yazhini K','Vaigai Brothers','Pandiya Drums','Mullai Sisters','Night Bus Chennai'],
+};
+const GENRES = {
+  KL: [{g:'Melody', feel:'melody', bpm:[72,92]},{g:'Folk', feel:'folk', bpm:[100,124]},{g:'Chenda fusion', feel:'chenda', bpm:[118,140]},{g:'Indie', feel:'indie', bpm:[88,110]},{g:'Retro', feel:'oldies', bpm:[66,84]},{g:'Rap', feel:'rap', bpm:[84,96]},{g:'Dance', feel:'dance', bpm:[120,132]}],
+  TN: [{g:'Kuthu', feel:'kuthu', bpm:[128,150]},{g:'Gaana', feel:'gaana', bpm:[108,126]},{g:'Melody', feel:'melody', bpm:[72,92]},{g:'Folk', feel:'folk', bpm:[100,124]},{g:'Retro', feel:'oldies', bpm:[66,84]},{g:'EDM fusion', feel:'dance', bpm:[122,134]},{g:'Rap', feel:'rap', bpm:[84,96]}],
+};
+// station feel -> preferred genres
+const FEEL_GENRES = { melody:['Melody','Retro','Indie'], backwater:['Melody','Indie','Folk'], dance:['Dance','EDM fusion','Kuthu','Rap'], oldies:['Retro','Melody'], beats:['Kuthu','Folk','Chenda fusion','Gaana','Rap'] };
+const DJ_BACK = {
+  KL: ['{artist} പാടിയ {song} ആയിരുന്നു അത്.','That was {song} by {artist}.','{artist} paadiya {song} aayirunnu athu.'],
+  TN: ['{artist} பாடிய {song} பாடல் இது.','That was {song} by {artist}.','{artist} paadiya {song} paadal idhu.'],
+};
+// News: [native, english, romanised]
+const NEWS = {
+  KL: { intro:['വാർത്തകൾ. സമയം {time}.','The news at {time}.','Vaarthakal. Samayam {time}.'],
+    items:[
+      ['{road} റോഡിൽ ഇന്ന് അറ്റകുറ്റപ്പണി നടക്കുന്നു.','Road repair work on {roadEn} today.','{roadEn} roadil innu attakuttappani nadakkunnu.'],
+      ['{city} മാർക്കറ്റിൽ ഇന്ന് വലിയ തിരക്ക്.','Heavy rush at the {cityEn} market today.','{cityEn} marketil innu valiya thirakku.'],
+      ['ബസ് സർവീസുകൾ സാധാരണ പോലെ ഓടുന്നു.','Bus services are running as usual.','Bus servicukal saadhaarana pole odunnu.'],
+      ['ഈ ആഴ്ച ഒരു പ്രാദേശിക ഫുട്ബോൾ ടൂർണമെന്റ് നടക്കും.','A local football tournament takes place this week.','Ee aazhcha oru praadeshika football tournament nadakkum.'],
+      ['നഗരത്തിൽ പോലീസ് വാഹന പരിശോധന നടത്തുന്നു.','Police are carrying out vehicle checks in the city.','Nagarathil police vaahana parishodhana nadathunnu.'],
+      ['ഓട്ടോ ഡ്രൈവർമാർ മീറ്റർ ഇടണമെന്ന് അധികൃതർ.','Officials remind auto drivers to use the meter.','Auto drivermaar meter idanamennu adhikruthar.'],
+    ],
+    rain:['ഇന്ന് മഴയ്ക്ക് സാധ്യത, ജാഗ്രത പാലിക്കുക.','Rain likely today, please take care.','Innu mazhaykku saadhyatha, jaagratha paalikkuka.'],
+    clear:['ഇന്ന് തെളിഞ്ഞ കാലാവസ്ഥ.','Clear weather today.','Innu thelinja kaalaavastha.'],
+    fest:['{fest} കാരണം വൈകുന്നേരം ഗതാഗത നിയന്ത്രണം.','Traffic restrictions this evening for the {festEn}.','{festEn} kaaranam vaikunneram gathaagatha niyanthranam.'] },
+  TN: { intro:['செய்திகள். நேரம் {time}.','The news at {time}.','Seidhigal. Neram {time}.'],
+    items:[
+      ['{road} சாலையில் இன்று பராமரிப்பு பணி நடக்கிறது.','Road repair work on {roadEn} today.','{roadEn} saalaiyil indru paraamarippu pani nadakkiradhu.'],
+      ['{city} சந்தையில் இன்று பெரிய கூட்டம்.','Heavy rush at the {cityEn} market today.','{cityEn} sandhaiyil indru periya koottam.'],
+      ['பேருந்து சேவைகள் வழக்கம் போல் இயங்குகின்றன.','Bus services are running as usual.','Perundhu sevaigal vazhakkam pol iyangugindrana.'],
+      ['இந்த வாரம் உள்ளூர் கால்பந்து போட்டி நடைபெறும்.','A local football tournament takes place this week.','Indha vaaram ulloor kaalpandhu potti nadaiperum.'],
+      ['நகரத்தில் போலீஸ் வாகன சோதனை நடக்கிறது.','Police are carrying out vehicle checks in the city.','Nagarathil police vaagana sodhanai nadakkiradhu.'],
+      ['ஆட்டோ ஓட்டுநர்கள் மீட்டர் போட வேண்டும் என அதிகாரிகள் அறிவுறுத்தல்.','Officials remind auto drivers to use the meter.','Auto ottunargal meter poda vendum ena adhigaarigal arivuruthal.'],
+    ],
+    rain:['இன்று மழைக்கு வாய்ப்பு, கவனமாக இருங்கள்.','Rain likely today, please take care.','Indru mazhaikku vaaippu, kavanamaaga irungal.'],
+    clear:['இன்று தெளிவான வானிலை.','Clear weather today.','Indru thelivaana vaanilai.'],
+    fest:['{fest} காரணமாக மாலையில் போக்குவரத்து கட்டுப்பாடு.','Traffic restrictions this evening for the {festEn}.','{festEn} kaaranamaaga maalaiyil pokkuvarathu kattuppaadu.'] },
+};

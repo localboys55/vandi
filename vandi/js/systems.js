@@ -241,19 +241,34 @@ function startRadio(){
 }
 function newSong(){
   const st = radioStations()[RADIO_SYS.st];
-  const seed = Math.floor(Math.random()*1e9);
-  let s = seed; const r = () => { s = (s*16807) % 2147483647; return (s-1)/2147483646; };
-  const words = SONG_WORDS[W.city.st];
+  let sd = Math.floor(Math.random()*1e9);
+  const r = () => { sd = (sd*16807) % 2147483647; return (sd-1)/2147483646; };
+  const stc = W.city.st;
+  const prefs = FEEL_GENRES[st.feel] || [];
+  let pool = GENRES[stc].filter(g => prefs.includes(g.g)); if (!pool.length || r() < 0.3) pool = GENRES[stc];
+  const genre = pool[Math.floor(r()*pool.length)];
+  const words = SONG_WORDS[stc];
   const w1 = words[Math.floor(r()*words.length)], w2 = words[Math.floor(r()*words.length)];
-  const len = 16;
-  const mel = []; let deg = 2;
-  for (let i = 0; i < len; i++) { deg = clamp(deg + Math.floor(r()*5) - 2, 0, st.scale.length*2-1); mel.push(r() < 0.18 ? -1 : deg); }
-  const mel2 = mel.map((d,i) => (i % 4 === 3 && r() < 0.5) ? clamp(d + (r()<0.5?1:-1), 0, st.scale.length*2-1) : d);
-  RADIO_SYS.song = {st, mel, mel2, bpm: st.bpm + Math.round((r()-0.5)*12), title: w1[0] + ' ' + w2[0], titleNt: w1[1] + ' ' + w2[1], inst: ['flute','pluck','reed'][Math.floor(r()*3)], start: AU.ctx.currentTime};
-  RADIO_SYS.songEnd = AU.ctx.currentTime + 70 + r()*30;
+  const artist = ARTISTS[stc][Math.floor(r()*ARTISTS[stc].length)];
+  const SCALES = {melody:[[0,2,4,7,9],[0,2,4,5,7,9,11]], folk:[[0,2,3,5,7,9,10],[0,2,4,7,9]], chenda:[[0,1,4,5,7,8,10]], indie:[[0,2,3,5,7,8,10],[0,2,4,5,7,9,11]], oldies:[[0,2,4,5,7,9,11],[0,3,5,7,10]],
+    rap:[[0,3,5,7,10]], dance:[[0,2,3,5,7,8,10],[0,1,4,5,7,8,11]], kuthu:[[0,1,4,5,7,8,10],[0,2,4,5,7,9,10]], gaana:[[0,2,4,5,7,9,10],[0,3,5,7,10]]};
+  const scs = SCALES[genre.feel] || [st.scale];
+  const scale = scs[Math.floor(r()*scs.length)];
+  const root = [196,208,220,233,247,262][Math.floor(r()*6)];
+  const mk = () => { const m = []; let d = 3; for (let i = 0; i < 16; i++) { d = clamp(d + Math.floor(r()*5) - 2, 0, scale.length*2-1); m.push(r() < 0.2 ? -1 : d); } return m; };
+  const verse = mk(), chorus = mk().map(d => d < 0 ? d : Math.min(d + 2, scale.length*2+1));
+  const progs = [[0,4,5,3],[0,5,3,4],[0,3,4,4],[5,3,0,4],[0,0,3,4]];
+  const prog = progs[Math.floor(r()*progs.length)];
+  const instMap = {melody:['flute','strings','bell'], folk:['reed','pluck'], chenda:['reed','synth'], indie:['pluck','synth','bell'], oldies:['flute','strings'], rap:['synth','bell'], dance:['synth','pluck'], kuthu:['reed','synth'], gaana:['reed','pluck']};
+  const insts = instMap[genre.feel] || ['flute'];
+  const bpm = genre.bpm[0] + Math.floor(r()*(genre.bpm[1]-genre.bpm[0]));
+  RADIO_SYS.song = {st, genre, feel: genre.feel, scale, root, verse, chorus, prog, bpm, artist, inst: insts[Math.floor(r()*insts.length)], pad: r() < 0.7,
+    title: w1[0] + ' ' + w2[0], titleNt: w1[1] + ' ' + w2[1], start: AU.ctx.currentTime};
+  RADIO_SYS.step = 0;
+  RADIO_SYS.songEnd = AU.ctx.currentTime + 75 + r()*35;
   updateRadioChip();
 }
-function noteFreq(st, deg){ const sc = st.scale; const oct = Math.floor(deg / sc.length); return st.root * Math.pow(2, (sc[deg % sc.length] + 12*oct)/12); }
+function noteFreq(sg, deg){ const sc = sg.scale; const oct = Math.floor(deg / sc.length); return sg.root * Math.pow(2, (sc[((deg % sc.length)+sc.length)%sc.length] + 12*oct)/12); }
 function rTone(t, f, dur, type, vol, opts){
   const C = AU.ctx, o = C.createOscillator(), g = C.createGain();
   o.type = type; o.frequency.setValueAtTime(f, t);
@@ -270,33 +285,88 @@ function radioTick(){
   if (!RADIO_SYS.on || !AU.ctx) return;
   const C = AU.ctx;
   const active = playing && !paused && !INTERIOR;
-  RADIO_SYS.gain.gain.setTargetAtTime(active ? (C.currentTime < RADIO_SYS.djUntil ? 0.12 : 0.45) : 0, C.currentTime, 0.2);
+  RADIO_SYS.gain.gain.setTargetAtTime(active ? (C.currentTime < RADIO_SYS.djUntil ? 0.1 : 0.45) : 0, C.currentTime, 0.2);
+  // hourly news at the top of each game hour
+  const hr = Math.floor(S.min / 60);
+  if (RADIO_SYS.lastNewsHr === undefined) RADIO_SYS.lastNewsHr = hr;
+  if (hr !== RADIO_SYS.lastNewsHr && active) { RADIO_SYS.lastNewsHr = hr; radioNews(); }
   if (!RADIO_SYS.song || C.currentTime > RADIO_SYS.songEnd) { if (RADIO_SYS.song) djTalk(false); newSong(); }
-  const sg = RADIO_SYS.song, st = sg.st, spb = 60 / sg.bpm / 2; // eighth notes
+  const sg = RADIO_SYS.song, spb = 60 / sg.bpm / 4; // sixteenth notes
   while (RADIO_SYS.nextT < C.currentTime + 0.15) {
     const t = RADIO_SYS.nextT, i = RADIO_SYS.step;
     const bar = Math.floor(i / 16), k = i % 16;
-    if (active) {
-      // drone / bass
-      if (k % 8 === 0) rTone(t, st.root/2, spb*7.5, 'sawtooth', 0.05, {lp: 500, att: 0.08});
-      if (k % 4 === 0) rTone(t, (k % 8 === 0 ? st.root : st.root*1.5)/2, spb*1.6, 'triangle', 0.16, {});
-      // percussion by feel
-      if (st.feel === 'dance') { if (k % 4 === 0) rTone(t, 120, 0.18, 'sine', 0.5, {drop: 0.35}); if (k % 8 === 4) rNoise(t, 0.12, 0.25, 1800); if (k % 2 === 1) rNoise(t, 0.04, 0.08, 6000); }
-      else if (st.feel === 'melody') { if ([0,3,6,10,12].includes(k)) rTone(t, 180, 0.22, 'sine', 0.3, {drop: 0.5}); if ([4,12].includes(k)) rNoise(t, 0.08, 0.12, 3000); }
-      else if (st.feel === 'beats') { if ([0,3,6,8,11,14].includes(k)) rTone(t, 150, 0.16, 'sine', 0.45, {drop: 0.4}); if (k % 2 === 0) rNoise(t, 0.05, 0.14, 2500); if ([4,12].includes(k)) rNoise(t, 0.14, 0.3, 900); }
-      else if (st.feel === 'oldies') { if ([0,8].includes(k)) rTone(t, 130, 0.35, 'sine', 0.22, {drop: 0.7}); if ([4,12].includes(k)) rNoise(t, 0.06, 0.05, 4000); }
-      else { if ([0,6,8,14].includes(k)) rTone(t, 140, 0.3, 'sine', 0.28, {drop: 0.6}); if (k % 4 === 2) rNoise(t, 0.05, 0.06, 5000); }
-      // melody (alternate phrases)
-      const m = (bar % 2 ? sg.mel2 : sg.mel)[k];
-      if (m >= 0 && (k % 2 === 0 || st.feel === 'dance')) {
-        const f = noteFreq(st, m) * 2;
-        if (sg.inst === 'flute') rTone(t, f, spb*1.8, 'sine', 0.13, {vib: true, att: 0.05});
-        else if (sg.inst === 'pluck') rTone(t, f, spb*1.4, 'triangle', 0.16, {att: 0.005});
-        else rTone(t, f, spb*1.7, 'sawtooth', 0.05, {vib: true, lp: 1800, att: 0.04});
+    const section = bar < 2 ? 'intro' : (Math.floor((bar-2) / 4) % 2 ? 'chorus' : 'verse');
+    const chordDeg = sg.prog[bar % 4];
+    if (active && C.currentTime < RADIO_SYS.songEnd) {
+      // pad chords
+      if (sg.pad && k === 0) [0,2,4].forEach(o => rTone(t, noteFreq(sg, chordDeg + o), spb*15, 'sawtooth', 0.025, {lp: 900, att: 0.25}));
+      // bass
+      if (section !== 'intro') { const bassHits = sg.feel === 'kuthu' || sg.feel === 'gaana' ? [0,6,8,14] : sg.feel === 'dance' ? [0,4,8,12] : [0,8,10]; if (bassHits.includes(k)) rTone(t, noteFreq(sg, chordDeg)/2, spb*3, 'triangle', 0.18, {}); }
+      // drums by genre
+      drumsFor(sg.feel, k, t, section);
+      // lead melody
+      if (section !== 'intro') {
+        const m = (section === 'chorus' ? sg.chorus : sg.verse)[(k >> 1) % 16 + (bar % 2 ? 0 : 0)] ;
+        const step2 = sg.feel === 'kuthu' || sg.feel === 'dance' ? 2 : 4;
+        if (k % step2 === 0) { const d = (section === 'chorus' ? sg.chorus : sg.verse)[((bar*16 + k)/step2) % 16 | 0]; if (d >= 0) leadNote(sg, t, noteFreq(sg, d) * 2, spb*step2); }
       }
     }
     RADIO_SYS.nextT += spb; RADIO_SYS.step++;
   }
+}
+function leadNote(sg, t, f, dur){
+  switch (sg.inst) {
+    case 'flute': rTone(t, f, dur*1.8, 'sine', 0.13, {vib: true, att: 0.05}); break;
+    case 'pluck': rTone(t, f, dur*1.2, 'triangle', 0.17, {att: 0.004}); rTone(t, f*2, dur*0.6, 'sine', 0.04, {att: 0.004}); break;
+    case 'reed': rTone(t, f, dur*1.7, 'sawtooth', 0.055, {vib: true, lp: 1900, att: 0.03}); break;
+    case 'synth': rTone(t, f, dur*1.1, 'square', 0.05, {lp: 2400, att: 0.01}); break;
+    case 'bell': rTone(t, f*2, dur*2.5, 'sine', 0.09, {att: 0.002}); rTone(t, f*3, dur*1.2, 'sine', 0.03, {att: 0.002}); break;
+    default: rTone(t, f, dur*1.5, 'strings' === sg.inst ? 'sawtooth' : 'sine', 0.06, {lp: 1500, att: 0.08, vib: true});
+  }
+}
+function drumsFor(feel, k, t, section){
+  const kick = (v) => rTone(t, 130, 0.2, 'sine', v, {drop: 0.35});
+  const snare = (v) => rNoise(t, 0.13, v, 1200);
+  const hat = (v) => rNoise(t, 0.035, v, 7000);
+  const tom = (f, v) => rTone(t, f, 0.18, 'sine', v, {drop: 0.55});
+  if (section === 'intro' && k % 8) return;
+  switch (feel) {
+    case 'kuthu': if ([0,3,6,8,11,14].includes(k)) kick(0.5); if ([4,12].includes(k)) snare(0.35); if (k % 2) hat(0.08); if ([2,10,13].includes(k)) rNoise(t, 0.06, 0.22, 900); break; // thappu-like slaps
+    case 'gaana': if ([0,6,10].includes(k)) kick(0.45); if ([4,12].includes(k)) rNoise(t, 0.08, 0.3, 1500); if (k % 2 === 0) hat(0.07); break;
+    case 'chenda': if (k % 2 === 0) rNoise(t, 0.05, 0.18 + (k%4===0?0.1:0), 1600); if ([0,8].includes(k)) tom(170, 0.4); if (section === 'chorus' && k % 1 === 0) rNoise(t, 0.03, 0.08, 2500); break; // rolls
+    case 'folk': if ([0,7,10].includes(k)) tom(150, 0.35); if ([4,12].includes(k)) tom(260, 0.25); if (k % 4 === 2) hat(0.06); break;
+    case 'dance': if (k % 4 === 0) kick(0.5); if ([4,12].includes(k)) snare(0.28); if (k % 2) hat(0.09); break;
+    case 'rap': if ([0,7,10].includes(k)) kick(0.5); if ([4,12].includes(k)) snare(0.32); if (k % 2 === 0) hat(0.06); break;
+    case 'indie': if ([0,8].includes(k)) kick(0.4); if ([4,12].includes(k)) snare(0.2); if (k % 2 === 0) hat(0.05); break;
+    case 'oldies': if ([0,8].includes(k)) tom(140, 0.25); if ([4,12].includes(k)) rNoise(t, 0.15, 0.05, 3000); break;
+    default: if ([0,6,8,14].includes(k)) tom(150, 0.28); if (k % 8 === 4) rNoise(t, 0.05, 0.08, 3000);
+  }
+}
+function speakQueue(items){ // items: [{text, lang, roman}]
+  if (!('speechSynthesis' in window) || !S || S.settings.voices === false) return;
+  try { speechSynthesis.cancel(); } catch(e) {}
+  items.forEach(it => {
+    let lang = it.lang, say = it.text, v = voiceFor(lang);
+    if (!v) { v = voiceFor('en'); say = it.roman; lang = 'en'; }
+    const u = new SpeechSynthesisUtterance(say); if (v) { u.voice = v; u.lang = v.lang; } u.rate = 1.0; u.pitch = 1.0;
+    try { speechSynthesis.speak(u); } catch(e) {}
+  });
+}
+function radioNews(){
+  if (!RADIO_SYS.on || !W) return;
+  const N = NEWS[W.city.st], lang = W.city.st === 'KL' ? 'ml' : 'ta';
+  const road = W.roadLines[Math.floor(Math.random()*W.roadLines.length)].name;
+  const fill = s => s.replace('{time}', fmtTime(S.min)).replace('{road}', road[1]).replace('{roadEn}', road[0]).replace('{city}', W.city.nt).replace('{cityEn}', W.city.en)
+    .replace('{fest}', festToday ? festToday.info.nt : '').replace('{festEn}', festToday ? festToday.info.en : '');
+  const picks = [N.intro, isRaining() || Math.random() < 0.3 ? N.rain : N.clear];
+  if (festToday) picks.push(N.fest);
+  const items = N.items.slice().sort(() => Math.random() - 0.5);
+  while (picks.length < 4) picks.push(items.pop());
+  speakQueue(picks.map(p => ({text: fill(p[0]), lang, roman: fill(p[2])})));
+  RADIO_SYS.djUntil = AU.ctx.currentTime + 4 + picks.length*3.5;
+  RADIO_SYS.newsText = picks.slice(1).map(p => fill(p[1])).join(' · ');
+  toast('📰 News: ' + RADIO_SYS.newsText, 'info');
+  phoneNote('📰 ' + fill(picks[1][1]));
 }
 function djTalk(intro){
   if (!RADIO_SYS.on || !W) return;
@@ -304,9 +374,10 @@ function djTalk(intro){
   let pair;
   if (rainLevel() > 0.3 && Math.random() < 0.5) pair = dj.rain;
   else if (festToday && Math.random() < 0.4) pair = dj.fest;
+  else if (!intro && RADIO_SYS.song && Math.random() < 0.6) { const bk = DJ_BACK[W.city.st]; pair = [bk[0], bk[2]]; }
   else pair = intro ? dj.lines[0] : pick(dj.lines.slice(1));
-  const fill = s => s.replace('{city}', W.city.en === W.city.nt ? W.city.en : (dj.lang === 'en' ? W.city.en : W.city.nt)).replace('{station}', st.nt).replace('{time}', fmtTime(S.min)).replace('{fest}', festToday ? festToday.info.nt : '').replace('{song}', RADIO_SYS.song ? RADIO_SYS.song.titleNt : '');
-  const fillR = s => s.replace('{city}', W.city.en).replace('{station}', st.name).replace('{time}', fmtTime(S.min)).replace('{fest}', festToday ? festToday.info.en : '').replace('{song}', RADIO_SYS.song ? RADIO_SYS.song.title : '');
+  const fill = s => s.replace('{city}', W.city.en === W.city.nt ? W.city.en : (dj.lang === 'en' ? W.city.en : W.city.nt)).replace('{station}', st.nt).replace('{time}', fmtTime(S.min)).replace('{fest}', festToday ? festToday.info.nt : '').replace('{song}', RADIO_SYS.song ? RADIO_SYS.song.titleNt : '').replace('{artist}', RADIO_SYS.song ? RADIO_SYS.song.artist : '');
+  const fillR = s => s.replace('{city}', W.city.en).replace('{station}', st.name).replace('{time}', fmtTime(S.min)).replace('{fest}', festToday ? festToday.info.en : '').replace('{song}', RADIO_SYS.song ? RADIO_SYS.song.title : '').replace('{artist}', RADIO_SYS.song ? RADIO_SYS.song.artist : '');
   const text = fill(pair[0]), roman = fillR(pair[1]);
   RADIO_SYS.djUntil = AU.ctx.currentTime + 6;
   RADIO_SYS.djText = (hasVoice(dj.lang) ? text : roman);
@@ -318,5 +389,5 @@ function updateRadioChip(){
   if (!RADIO_SYS.on) { el.innerHTML = '📻 <span>Radio off</span>'; el.classList.remove('on'); return; }
   const st = radioStations()[RADIO_SYS.st];
   el.classList.add('on');
-  el.innerHTML = '<i></i><b>' + st.freq + '</b> <span>' + escapeHtml(st.name) + (st.scope !== 'Statewide' ? ' (' + st.scope + ')' : '') + (RADIO_SYS.song ? ' · ♪ ' + escapeHtml(RADIO_SYS.song.title) : '') + '</span>';
+  el.innerHTML = '<i></i><b>' + st.freq + '</b> <span>' + escapeHtml(st.name) + (st.scope !== 'Statewide' ? ' (' + st.scope + ')' : '') + (RADIO_SYS.song ? ' · ♪ ' + escapeHtml(RADIO_SYS.song.title) + ' — ' + escapeHtml(RADIO_SYS.song.artist) + ' (' + RADIO_SYS.song.genre.g + ')' : '') + '</span>';
 }

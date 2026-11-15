@@ -238,7 +238,7 @@ function obstacleAhead(x, z, h, range, lat, self){
 }
 function updateTraffic(dt){
   for (const n of NPCS) {
-    let target = n.cruise;
+    let target = n.cruise * (n.honked > simT ? 1.5 : 1);
     const L = n.line;
     // traffic lights
     const sigList = L.axis === 'x' ? W.signals.filter(s => s.tz === L.idx).map(s => s.tx) : W.signals.filter(s => s.tx === L.idx).map(s => s.tz);
@@ -253,7 +253,7 @@ function updateTraffic(dt){
     if (obs < n.len/2 + 14) target = Math.min(target, Math.max(0, (obs - n.len/2 - 3.5)) * 0.9);
     n.v += clamp(target - n.v, -9*dt, 3*dt);
     if (n.v < 0.3 && target < 0.3) n.blocked += dt; else n.blocked = 0;
-    if (n.blocked > 3.5 && Math.random() < dt*0.5 && Math.hypot(n.x-P.x,n.z-P.z) < 40) { honk(0.25); n.blocked = 0; if (Math.hypot(n.x-P.x,n.z-P.z) < 18) speak(n, 'angry', vehH(n)); }
+    if (n.blocked > 3.5 && Math.random() < dt*0.5 && Math.hypot(n.x-P.x,n.z-P.z) < 40) { if (n.kind === 'auto') autoHorn(0.2); else if (n.kind === 'bus') { tone(220,0.5,'sawtooth',0.15); tone(277,0.5,'sawtooth',0.15); } else { tone(390,0.35,'square',0.1); tone(490,0.35,'square',0.1); } n.blocked = 0; if (Math.hypot(n.x-P.x,n.z-P.z) < 18) speak(n, 'angry', vehH(n)); }
     n.s += n.v*dt*n.dir;
     if (n.s > L.max + 10 || n.s < L.min - 10) { n.s = n.dir > 0 ? L.min - 5 : L.max + 5; }
     placeNpc(n);
@@ -282,11 +282,12 @@ function updatePeds(dt){
   for (const pd of PEDS) {
     if (pd.down > 0) { pd.down -= dt; if (pd.down <= 0) { pd.mesh.rotation.set(0, pd.mesh.rotation.y, 0); pd.mesh.position.y = 0; } continue; }
     if (pd.crossing) {
-      pd.crossT += pd.crossDir * 1.4 * dt;
-      if (Math.abs(pd.crossT) >= 5.7) { pd.crossing = false; pd.side = Math.sign(pd.crossT); }
+      pd.crossT += pd.crossDir * (pd.crossSpeed || 1.4) * dt;
+      if (Math.abs(pd.crossT) >= 5.7) { pd.crossing = false; pd.side = Math.sign(pd.crossT); pd.crossSpeed = 0; }
       const yaw = pd.h ? (pd.crossDir > 0 ? 0 : Math.PI) : (pd.crossDir > 0 ? Math.PI/2 : -Math.PI/2);
       pd.mesh.rotation.y = yaw;
     } else {
+      if (pd.hurryT > 0) { pd.hurryT -= dt; if (pd.hurryT <= 0) pd.speed = rnd(0.9,1.5); }
       pd.along += pd.dir * pd.speed * dt;
       if (Math.abs(pd.along) > 6.5) pd.dir *= -1;
       if (Math.random() < dt*0.04 && Math.hypot(pd.x-P.x, pd.z-P.z) > 15) { pd.crossing = true; pd.crossT = pd.side*5.7; pd.crossDir = -pd.side; }
@@ -295,6 +296,7 @@ function updatePeds(dt){
     const sw = Math.sin(simT*8 + pd.speed*10)*0.5;
     pd.mesh.userData.arms[0].rotation.x = sw; pd.mesh.userData.arms[1].rotation.x = -sw;
     placePed(pd);
+    if (pd.flinch > 0) { pd.flinch -= dt; pd.mesh.position.y = Math.sin(pd.flinch*12)*0.12 + 0.06; }
   }
 }
 function spawnAnimals(){
@@ -315,7 +317,8 @@ function updateAnimals(dt){
     const f = fwd(a.h);
     let nx = a.x + f.x*a.v*dt, nz = a.z + f.z*a.v*dt;
     const r = W.collide(nx, nz, 0.8);
-    if (r.hit || W.surfaceAt(nx,nz) === GRASS) { a.h += Math.PI*0.7; a.t = rnd(1,3); } else { a.x = r.x; a.z = r.z; }
+    if (a.scared > 0) a.scared -= dt;
+    if (r.hit || (W.surfaceAt(nx,nz) === GRASS && !(a.scared > 0))) { a.h += Math.PI*0.7; a.t = rnd(1,3); } else { a.x = r.x; a.z = r.z; }
     a.mesh.position.set(a.x, 0, a.z); a.mesh.rotation.y = a.h;
   }
 }
@@ -717,7 +720,7 @@ function stepPlayer(dt){
         if (sp > 3) {
           pd.down = 6; pd.crossing = false; pd.mesh.rotation.x = -Math.PI/2; pd.mesh.position.y = 0.25;
           addWanted(2, 'Knocked down a pedestrian');
-          speak(pd, 'angry', 2.2);
+          pd._saidT = 0; speak(pd, 'hurt', 1.2);
           const by = PEDS.find(o => o !== pd && o.down <= 0 && Math.hypot(o.x-pd.x, o.z-pd.z) < 18); if (by) speak(by, 'angry');
           playNoise(0.15, 0.3, 500);
         } else { P.v *= 0.2; speak(pd, 'excuse'); }
@@ -987,8 +990,51 @@ function updateAudio(){
 }
 function setRainSound(v){ if (AU.rainG) AU.rainG.gain.setTargetAtTime(playing && !paused ? v : 0, AU.ctx.currentTime, 0.4); }
 function tone(freq, dur, type, vol, delay){ if (!AU.ctx) return; const C = AU.ctx, t = C.currentTime + (delay||0); const o = C.createOscillator(); o.type = type||'sine'; o.frequency.value = freq; const g = C.createGain(); g.gain.setValueAtTime(vol||0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t+dur); o.connect(g); g.connect(AU.master); o.start(t); o.stop(t+dur+0.05); }
-function honkReact(){ if (!W || onFoot) return; PEDS.forEach(pd => { if (pd.down <= 0 && Math.hypot(pd.x-P.x, pd.z-P.z) < 14 && Math.random() < 0.35) speak(pd, 'horn'); }); }
-function honk(vol){ const v = vol ?? 0.18; const cat = P ? P.def.cat : 'auto'; if (cat === 'bus') { tone(220,0.5,'sawtooth',v); tone(277,0.5,'sawtooth',v); } else if (cat === 'auto') { tone(420,0.35,'square',v*0.7); tone(520,0.35,'square',v*0.7); } else { tone(390,0.4,'square',v*0.7); tone(490,0.4,'square',v*0.7); } }
+function honkReact(){
+  if (!W || onFoot) return;
+  const f = fwd(P.h);
+  let said = false;
+  PEDS.forEach(pd => {
+    const dx = pd.x-P.x, dz = pd.z-P.z, d = Math.hypot(dx,dz);
+    if (pd.down > 0 || d > 20) return;
+    pd.flinch = 0.5;
+    if (pd.crossing) pd.crossSpeed = 4.2;                    // hurry off the road
+    else if ((dx*f.x+dz*f.z) > 0 && Math.random() < 0.5) { pd.dir = Math.sign(dx*f.x+dz*f.z) || 1; pd.speed = 2.6; pd.hurryT = 3; }
+    if (!said && Math.random() < 0.4) { speak(pd, 'horn'); said = true; }
+  });
+  ANIMALS.forEach(a => {
+    const dx = a.x-P.x, dz = a.z-P.z, d = Math.hypot(dx,dz);
+    if (d > 24) return;
+    a.h = Math.atan2(dx,dz) + rnd(-0.7,0.7); a.v = a.type === 'cow' ? 1.8 : 5.5; a.t = a.type === 'cow' ? 5 : 2.5; a.scared = 5;
+    if (a.type === 'cow' && Math.random() < 0.5) moo(clamp(1-d/24,0.2,1)); if (a.type === 'dog') bark(clamp(1-d/24,0.2,1));
+  });
+  NPCS.forEach(n => {
+    const dx = n.x-P.x, dz = n.z-P.z, d = Math.hypot(dx,dz);
+    if (d > 40) return;
+    const al = dx*f.x + dz*f.z, lat = Math.abs(dx*f.z - dz*f.x);
+    if (al <= 0 || lat > 5) return;
+    n.honked = simT + 4;
+    if (!said && Math.random() < 0.35) { speak(n, 'horn', vehH(n)); said = true; }
+  });
+}
+function moo(v){ if (!AU.ctx) return; const C = AU.ctx, t = C.currentTime, o = C.createOscillator(), g = C.createGain(), f = C.createBiquadFilter(); o.type = 'sawtooth'; o.frequency.setValueAtTime(120, t); o.frequency.linearRampToValueAtTime(95, t+1.1); f.type = 'lowpass'; f.frequency.value = 500; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18*v, t+0.15); g.gain.exponentialRampToValueAtTime(0.0001, t+1.2); o.connect(f); f.connect(g); g.connect(AU.master); o.start(t); o.stop(t+1.25); }
+function bark(v){ if (!AU.ctx) return; [0, 0.22].forEach(d => { tone(430, 0.09, 'square', 0.08*v, d); playNoiseAt(0.08, 0.15*v, 1400, d); }); }
+function playNoiseAt(dur, vol, freq, delay){ if (!AU.ctx) return; const C = AU.ctx, t = C.currentTime + (delay||0); const s2 = C.createBufferSource(); s2.buffer = AU.noise; const f = C.createBiquadFilter(); f.type='bandpass'; f.frequency.value = freq; const g = C.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t+dur); s2.connect(f); f.connect(g); g.connect(AU.master); s2.start(t); s2.stop(t+dur+0.05); }
+// Classic auto-rickshaw horn: two quick nasal "paam paam" toots
+function autoHorn(v){
+  if (!AU.ctx) return; const C = AU.ctx;
+  [0, 0.24].forEach((d, i) => {
+    const t = C.currentTime + d, dur = i ? 0.26 : 0.18;
+    [[560,0.12],[840,0.05]].forEach(([f0, vol]) => {
+      const o = C.createOscillator(), bp = C.createBiquadFilter(), g = C.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(f0*1.05, t); o.frequency.exponentialRampToValueAtTime(f0*0.93, t+dur);
+      bp.type = 'bandpass'; bp.frequency.value = 1300; bp.Q.value = 3;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol*v*4, t+0.02); g.gain.setValueAtTime(vol*v*4, t+dur-0.04); g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+      o.connect(bp); bp.connect(g); g.connect(AU.master); o.start(t); o.stop(t+dur+0.02);
+    });
+  });
+}
+function honk(vol){ const v = vol ?? 0.18; const cat = P ? P.def.cat : 'auto'; if (cat === 'bus') { tone(220,0.5,'sawtooth',v); tone(277,0.5,'sawtooth',v); } else if (cat === 'auto') { autoHorn(v); } else { tone(390,0.4,'square',v*0.7); tone(490,0.4,'square',v*0.7); } }
 function ding(n){ tone(880,0.25,'sine',0.15); if (n>1) tone(1320,0.35,'sine',0.15,0.12); }
 function playNoise(dur, vol, freq){ if (!AU.ctx) return; const C = AU.ctx; const s = C.createBufferSource(); s.buffer = AU.noise; const f = C.createBiquadFilter(); f.type='lowpass'; f.frequency.value = freq||600; const g = C.createGain(); g.gain.setValueAtTime(vol, C.currentTime); g.gain.exponentialRampToValueAtTime(0.001, C.currentTime+dur); s.connect(f); f.connect(g); g.connect(AU.master); s.start(); s.stop(C.currentTime+dur+0.05); }
 function drum(v){ if (!AU.ctx || v <= 0.02) return; tone(110, 0.18, 'sine', 0.25*v); playNoise(0.08, 0.15*v, 2500); }
@@ -1437,15 +1483,24 @@ function renderAccounts(){
     const b = document.createElement('button'); b.className = 'acct';
     b.innerHTML = '<b>' + escapeHtml(a.name) + '</b><span>' + (sv ? money(sv.money) + ' · ' + escapeHtml(cityById(sv.city).en) + ' · Day ' + sv.day : 'New') + '</span>';
     b.onclick = () => askPin(a);
-    list.appendChild(b);
+    const row = document.createElement('div'); row.className = 'accRow';
+    const del = document.createElement('button'); del.className = 'accDel'; del.title = 'Delete account'; del.textContent = '🗑';
+    del.onclick = (e) => { e.stopPropagation(); askPin(a, 'delete'); };
+    row.appendChild(b); row.appendChild(del);
+    list.appendChild(row);
   });
 }
-function askPin(a){
-  $('pinFor').textContent = a.name; $('pinIn').value = ''; $('pinErr').textContent = '';
+function askPin(a, mode){
+  const del = mode === 'delete';
+  $('pinFor').textContent = (del ? 'delete ' : '') + a.name; $('pinIn').value = ''; $('pinErr').textContent = del ? 'This permanently deletes this account and all its progress on this phone.' : '';
+  $('pinGo').textContent = del ? 'Delete account' : 'Play';
+  $('pinGo').classList.toggle('danger', del);
   $('pinBox').classList.remove('hidden'); $('pinIn').focus();
   $('pinGo').onclick = () => {
     if (pinHash($('pinIn').value, a.name) !== a.pin) { $('pinErr').textContent = 'Wrong PIN'; return; }
-    $('pinBox').classList.add('hidden'); login(a.id, a.name);
+    $('pinBox').classList.add('hidden');
+    if (del) { const acc = accounts(); acc.list = acc.list.filter(x => x.id !== a.id); store.set(ACC_KEY, acc); store.del(SAVE_PREFIX + a.id); renderAccounts(); }
+    else login(a.id, a.name);
   };
 }
 function createAccount(){
