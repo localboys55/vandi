@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Vandi — Kerala & Tamil Nadu Roads</title>
+<meta name="theme-color" content="#0f3b2e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+@font-face{font-family:"Baloo Chettan 2";font-weight:600;src:url(fonts/baloo-chettan-2-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:700;src:url(fonts/baloo-chettan-2-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:800;src:url(fonts/baloo-chettan-2-latin-800-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F,U+20B9}
+@font-face{font-family:"Baloo Chettan 2";font-weight:600;src:url(fonts/baloo-chettan-2-malayalam-600-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Chettan 2";font-weight:700;src:url(fonts/baloo-chettan-2-malayalam-700-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Chettan 2";font-weight:800;src:url(fonts/baloo-chettan-2-malayalam-800-normal.woff2) format("woff2");unicode-range:U+0D00-0D7F,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:600;src:url(fonts/baloo-thambi-2-tamil-600-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:700;src:url(fonts/baloo-thambi-2-tamil-700-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+@font-face{font-family:"Baloo Thambi 2";font-weight:800;src:url(fonts/baloo-thambi-2-tamil-800-normal.woff2) format("woff2");unicode-range:U+0B80-0BFF,U+200C-200D,U+25CC}
+:root{--cream:#f6efd9;--gold:#c9a227;--gold2:#f4d03f;--green:#0f3b2e;--leaf:#2f7d32;--ink:#1c1a14;--mari:#f5a623;--red:#e74c3c;--teal:#19c3b8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:#0b1626;font-family:"Baloo Chettan 2","Baloo Thambi 2",system-ui,sans-serif;color:var(--ink);touch-action:none;user-select:none;-webkit-user-select:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hidden{display:none!important}
+.small{font-size:13px;opacity:.85}
+.native{font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif;color:#7a5c00}
+.btn{font:700 16px/1 inherit;font-family:inherit;padding:11px 18px;border-radius:12px;border:2px solid #8a6d12;background:linear-gradient(#ffd15c,#f5a623);color:#2b1d00;cursor:pointer;box-shadow:0 3px 0 #8a6d12}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 #8a6d12}
+.btn:disabled{opacity:.45;filter:grayscale(.6)}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:none}
+.btn.small{padding:7px 12px;font-size:14px}
+.panel{background:rgba(246,239,217,.94);border:2px solid var(--gold);outline:2px solid rgba(201,162,39,.35);outline-offset:2px;border-radius:12px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+/* screens */
+.screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(180deg,rgba(15,59,46,.55),rgba(11,22,38,.85));z-index:20;overflow:auto}
+.card{background:var(--cream);border:3px solid var(--gold);outline:3px solid rgba(201,162,39,.45);outline-offset:4px;border-radius:18px;padding:20px 22px;max-width:520px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.45);max-height:92vh;overflow:auto}
+.logo{font-weight:800;font-size:46px;line-height:1;color:var(--green);letter-spacing:.5px}
+.logo{font-family:"Baloo Thambi 2","Baloo Chettan 2",sans-serif;font-size:40px;line-height:1.05;color:#b7770a;text-shadow:0 0 1px #000}
+.logo .ml{font-family:"Baloo Chettan 2",sans-serif;color:#0a7c74}
+.logoBox{display:flex;gap:14px;align-items:center}.logoBox img{width:84px;height:84px;border-radius:18px;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.logoBox small{display:block;font-size:14px;color:#7a5c00;font-weight:700;margin-top:2px}
+.tagline{margin:8px 0 14px;font-size:15px}
+.acct{display:flex;justify-content:space-between;align-items:center;width:100%;padding:12px 14px;margin:6px 0;border-radius:12px;border:2px solid var(--gold);background:#fffaf0;font:inherit;cursor:pointer;text-align:left}
+.acct span{font-size:13px;opacity:.8}
+.field{display:block;margin:8px 0;font-weight:600;font-size:14px}
+.field input,.field select,textarea,select{width:100%;font:inherit;padding:9px 10px;border-radius:10px;border:2px solid #d8c88c;background:#fff;margin-top:3px}
+textarea{font-family:"Share Tech Mono",monospace;font-size:11px;resize:none;user-select:text;-webkit-user-select:text}
+.err{color:#b03a2e;font-size:13px;min-height:18px}
+hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:8px 0}
+.row select{width:auto}
+/* HUD (Vandi style: dark glass, gold accents) */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
+#hud button{pointer-events:auto}
+.glass{background:rgba(14,22,30,.78);color:#f6efd9;border:1.5px solid rgba(244,208,63,.55);border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#topL{position:absolute;left:max(10px,env(safe-area-inset-left));top:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.hudBtns{display:flex;gap:6px}
+.hb{width:40px;height:40px;border-radius:12px;border:1.5px solid rgba(244,208,63,.6);background:rgba(14,22,30,.78);color:#f6efd9;font-size:16px;font-weight:800;cursor:pointer}
+#vehTxt{padding:3px 10px;font-size:12px}
+#saveTxt{font-size:10px;color:#fff;text-shadow:0 1px 2px #000;padding-left:4px}
+#banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:min(52vw,640px);text-align:center;background:rgba(246,239,217,.95);color:#1c1a14;border-radius:16px;padding:8px 18px;border:2px solid #c9a227;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+#banner small{display:block;font-weight:800;letter-spacing:2px;color:#8a6d12;font-size:11px}#banner b{display:block;font-size:20px;line-height:1.25}#banner span{display:block;font-size:12px;opacity:.75}
+#topR{position:absolute;right:max(10px,env(safe-area-inset-right));top:10px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#earnCard{width:230px;padding:8px 12px}
+.erow{display:flex;justify-content:space-between;align-items:baseline}
+.lbl{font-size:11px;font-weight:800;letter-spacing:2px;opacity:.8}
+#money{font-size:28px;line-height:1.05;color:#7dffb0}#money.neg{color:#ff8a7a}
+.goal{font-size:12px;opacity:.85}.goal b{color:#f4d03f}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.15);margin:5px 0;overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#f4d03f,#7dffb0)}
+#earnSub{font-size:12px;opacity:.85}
+#stars{font-size:15px;color:#777;letter-spacing:1px}
+#stars.on{color:#ff3b30;animation:blink .6s infinite}
+@keyframes blink{50%{color:#0a84ff}}
+#gpsWrap{position:relative;width:220px;display:flex;flex-direction:column;align-items:center;gap:5px}
+#gps{width:220px;height:220px;border-radius:50%;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+#clockPill{padding:2px 12px;font-size:13px}#clockPill b{font-family:"Share Tech Mono",monospace;font-size:17px;color:#f4d03f}
+#radioChip{padding:3px 10px;font:inherit;font-size:12px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;display:flex;gap:5px;align-items:center}
+#radioChip.on i{width:8px;height:8px;border-radius:50%;background:#ff3b30;display:inline-block;animation:blink 1.2s infinite}
+#radioChip b{font-family:"Share Tech Mono",monospace;color:#7dffb0}
+#speedWrap{position:absolute;left:max(10px,env(safe-area-inset-left));bottom:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.spRow{display:flex;align-items:flex-end;gap:6px}
+#speedoC{width:180px;height:180px}
+#limit{width:46px;height:46px;border-radius:50%;border:6px solid #e53935;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;margin-bottom:8px;box-shadow:0 3px 10px rgba(0,0,0,.4)}
+#roadPill{padding:3px 12px;display:flex;flex-direction:column;line-height:1.15}#roadPill b{font-size:14px}#roadPill span{font-size:12px;color:#f4d03f}
+#meter{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);padding:6px 12px;min-width:270px;background:rgba(10,10,10,.82)}
+.mtop{display:flex;align-items:center;gap:8px;font-weight:800;font-size:12px;letter-spacing:1.5px}
+#nightTag{margin-left:auto;color:#ffd15c}
+.led{width:10px;height:10px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.led.vac{background:#2ecc40;color:#2ecc40}.led.hired{background:#ff3b30;color:#ff3b30}
+.mgrid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px;margin-top:2px}
+.mgrid small{display:block;font-size:10px;opacity:.6;letter-spacing:1px}
+.mgrid b{font-family:"Share Tech Mono",monospace;font-size:28px;color:#ff4d3a;text-shadow:0 0 8px rgba(255,60,40,.6);line-height:1}
+#fareSub{font-size:11px;opacity:.8;margin-top:2px;max-width:300px}
+/* phone */
+#phone{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:12px;width:250px;background:#11161c;border:6px solid #1d232b;border-radius:28px;box-shadow:0 14px 30px rgba(0,0,0,.5);color:#1c1a14;overflow:hidden;pointer-events:auto;transform:rotate(-2deg);transition:transform .25s}
+#phone .notch{position:absolute;left:50%;top:5px;transform:translateX(-50%);width:70px;height:12px;border-radius:8px;background:#0b0e12;z-index:2}
+#phoneHead{background:#0f3b2e;color:#f6efd9;padding:20px 14px 6px;display:flex;justify-content:space-between;align-items:baseline}
+#phoneHead b{font-size:16px}#phoneHead i{color:#f4d03f;font-style:normal}#phoneClock{font-family:"Share Tech Mono",monospace;font-size:12px;opacity:.8}
+#phoneNote{background:#f4d03f;color:#2b1d00;font-size:12px;font-weight:700;padding:5px 12px}
+#phoneBody{background:#f6efd9;min-height:150px;max-height:230px;overflow:auto;padding:10px 12px;font-size:13px}
+#phoneTabs{display:grid;grid-template-columns:repeat(4,1fr);background:#fffaf0;border-top:1px solid #e6d9a8}
+#phoneTabs button{font:inherit;border:none;background:none;padding:5px 0 6px;font-size:16px;cursor:pointer;display:flex;flex-direction:column;align-items:center;color:#5a4a20}
+#phoneTabs button span{font-size:9px;font-weight:700}
+#phoneTabs button.on{color:#0f3b2e;background:#f4ecd0}
+.rq{display:flex;gap:10px;align-items:center}
+.av{width:42px;height:42px;border-radius:50%;background:#c97b3f;color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;flex:none}
+.rq .nm{font-weight:800;font-size:16px;line-height:1.1}.rq .meta{font-size:11px;opacity:.75}
+.rq .dist{margin-left:auto;text-align:right;line-height:1}.rq .dist b{font-size:22px}.rq .dist small{display:block;font-size:10px;opacity:.7}
+.pill{display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;padding:2px 8px;border-radius:10px;background:#f4d03f;color:#2b1d00}
+.pill.trip{background:#19c3b8;color:#032}
+.stat{background:#fff;border-radius:12px;padding:7px 10px;margin-top:8px;border:1px solid #eadfb8}
+.stat b{display:block}.stat span{font-size:11px;opacity:.75}
+.rv{border-bottom:1px solid #e6d9a8;padding:5px 0}.rv b{font-size:12px}.rv .st{color:#e0a400;font-size:12px}.rv p{margin:2px 0;font-size:12px}.rv p.n{font-size:12px;color:#5a4a20}
+.big{font-size:26px;font-weight:800;color:#0f3b2e}
+#phoneMini{display:none;position:absolute;right:max(12px,env(safe-area-inset-right));padding:6px 10px;font:inherit;font-size:12px;max-width:220px;text-align:left}
+#bubbles{position:absolute;inset:0;overflow:hidden}
+.sb{position:absolute;transform:translate(-50%,-100%);background:#fff;border:3px solid #e74c3c;border-radius:14px;padding:4px 11px;font-weight:800;font-size:15px;white-space:nowrap;color:#222;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
+.sb:after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-8px;border:8px solid transparent;border-top-color:inherit;border-bottom:0}
+.sb.angry,.sb.crash,.sb.cow,.sb.dog{border-color:#e74c3c;animation:shake .35s 2}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}
+@keyframes shake{25%{margin-left:-3px}75%{margin-left:3px}}
+#toasts{position:absolute;top:110px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(60vw,460px)}
+.toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
+.toast.good{border-color:#27ae60;color:#145a32}.toast.bad{border-color:#e74c3c;color:#922b21;background:#fff0ee}
+.toast.out{opacity:0;transform:translateY(-8px)}
+#prompt{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);color:#fff;font-weight:800;font-size:17px;text-shadow:0 2px 4px #000;white-space:nowrap}
+#bubble{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);max-width:min(50vw,460px);padding:8px 14px}
+#bName{display:block;color:#f4d03f;font-size:13px}#bText{display:block;font-size:17px;font-weight:700}#bEng{display:block;font-size:12px;opacity:.75}
+#actBtn{position:absolute;left:50%;bottom:220px;transform:translateX(-50%);font-size:17px}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#flash.go{animation:fl .35s}
+@keyframes fl{0%{opacity:.85}100%{opacity:0}}
+.checklist{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ck{padding:6px 10px;border-radius:10px;background:#fffaf0;border:1.5px solid #e6d9a8}.ck.bad{border-color:#e74c3c;background:#fff0ee}
+@media (max-height:820px){
+  #gpsWrap{width:180px} #gps{width:180px;height:180px}
+  #earnCard{width:200px} #money{font-size:24px}
+  #phone{width:230px} #phoneBody{min-height:110px;max-height:150px}
+  #speedoC{width:150px;height:150px}
+}
+#topR{z-index:2}
+/* touch layout */
+#touch{display:none}
+body.touch #touch{display:block}
+#touch .tl,#touch .tr{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));display:flex;gap:10px;align-items:flex-end}
+#touch .tl{left:max(12px,env(safe-area-inset-left))}
+#touch .tr{right:max(12px,env(safe-area-inset-right))}
+#touch button{pointer-events:auto;border:3px solid rgba(201,162,39,.9);background:rgba(246,239,217,.45);border-radius:18px;font:800 16px inherit;font-family:inherit;color:#2b1d00;touch-action:none}
+#touch button.down{background:rgba(245,166,35,.85)}
+#touch .steer{width:70px;height:70px;font-size:26px}
+#touch .gas{width:76px;height:100px;background:rgba(46,204,64,.45)}
+#touch .brake{width:70px;height:76px;background:rgba(231,76,60,.45)}
+#touch .horn{width:50px;height:50px;border-radius:50%;font-size:20px}
+body.touch #speedWrap{bottom:96px;transform:scale(.72);transform-origin:bottom left}
+body.touch #phone{display:none}
+body.touch #phone.open{display:block;bottom:auto;top:8px;right:auto;left:50%;transform:translateX(-50%) scale(.82);transform-origin:top center;z-index:9}
+body.touch #phone.open #phoneBody{max-height:150px;min-height:100px}
+body.touch #phoneMini{display:block;bottom:84px;right:auto;left:50%;transform:translateX(-50%);max-width:46vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.touch #clockPill,body.touch #radioChip{display:none}
+body.touch #meter{bottom:8px;min-width:0;transform:translateX(-50%) scale(.82);transform-origin:bottom center}
+body.touch #topR{transform:scale(.64);transform-origin:top right}
+body.touch #banner{transform:translateX(-50%) scale(.75);transform-origin:top center;max-width:60vw}
+body.touch #actBtn{bottom:130px}
+body.touch #bubble{bottom:auto;top:90px}
+body.touch #toasts{top:70px}
+/* modal & pause */
+#modal .card h2{margin:0 0 6px;color:var(--green)}
+.tabs{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.tab{font:inherit;font-weight:700;padding:6px 12px;border-radius:10px;border:2px solid var(--gold);background:#fffaf0;cursor:pointer}
+.tab.on{background:var(--mari)}
+.vlist{display:flex;flex-direction:column;gap:6px;max-height:48vh;overflow:auto}
+.vrow{display:flex;align-items:center;gap:10px;background:#fffaf0;border:2px solid #e6d9a8;border-radius:12px;padding:8px}
+.sw{width:30px;height:30px;border-radius:8px;border:4px solid #222;flex:none}
+.vinfo{flex:1;display:flex;flex-direction:column}.vinfo span{font-size:12px;opacity:.8}
+.tag{font-size:12px;font-weight:800;color:#145a32;padding:4px 8px;border:2px solid #27ae60;border-radius:8px}
+.festbox{background:#f4ecf7;border:2px solid #bb8fce;border-radius:10px;padding:8px}
+#modalBtns,#pBtns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#pBtns .btn{flex:1 1 45%}
+/* state map */
+#mapScreen .card{max-width:900px;display:flex;flex-direction:column;gap:10px;height:92vh}
+#stateMap{width:100%;flex:1;border-radius:12px;min-height:200px;cursor:pointer}
+#cityCard{min-height:70px}
+#cityCard h3{margin:0}
+#loading{z-index:30}
+#loading .card{text-align:center}
+#rotate{display:none}
+@media (orientation:portrait) and (max-width:700px){ body.playing #rotate{display:flex;z-index:40} }
+.keys{font-size:12px;opacity:.75;margin-top:10px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="topL">
+    <div class="hudBtns">
+      <button class="hb" id="pauseBtn" title="Pause (P)">II</button>
+      <button class="hb" id="mapBtn" title="State map (M)">🗺</button>
+      <button class="hb" id="camBtn" title="Camera (C)">🎥</button>
+      <button class="hb" id="footBtn" title="Get out (F)">🚶</button>
+      <button class="hb" id="radioBtn" title="Radio (R)">📻</button>
+    </div>
+    <div id="vehTxt" class="glass small"></div>
+    <div id="saveTxt"></div>
+  </div>
+  <div id="banner" class="hidden"><small id="banTag"></small><b id="banNt"></b><span id="banEn"></span></div>
+  <div id="topR">
+    <div id="earnCard" class="glass">
+      <div class="erow"><span class="lbl">TODAY</span><span id="stars"></span></div>
+      <div class="erow"><b id="money">₹0</b><span class="goal">Goal <b id="goalTxt">₹1,000</b></span></div>
+      <div class="bar"><i id="netBar"></i></div>
+      <div id="earnSub" class="small"></div>
+    </div>
+    <div id="gpsWrap">
+      <canvas id="gps" width="440" height="440"></canvas>
+      <div id="clockPill" class="glass"><span id="wx">☀</span> <b id="timeTxt">7:00 AM</b> <span id="dayTxt">Day 1</span></div>
+      <button id="radioChip" class="glass">📻 <span>Radio off</span></button>
+    </div>
+  </div>
+  <div id="speedWrap">
+    <div id="roadPill" class="glass"><b id="roadEn"></b><span id="roadNt"></span></div>
+    <div class="spRow"><canvas id="speedoC" width="360" height="360"></canvas><div id="limit">50</div></div>
+  </div>
+  <div id="meter" class="glass">
+    <div class="mtop"><span id="flag" class="led vac"></span><span id="flagTxt">VACANT</span><span id="nightTag" class="hidden">🌙 +50%</span></div>
+    <div class="mgrid"><div><small>FARE ₹</small><b id="fare">---</b></div><div><small>KM</small><b id="kmTxt">0.0</b></div><div><small>TIME</small><b id="tripT">0:00</b></div></div>
+    <div id="fareSub"></div>
+  </div>
+  <div id="phone" class="open">
+    <div class="notch"></div>
+    <div id="phoneHead"><b>Vandi <i>Ride</i></b><span id="phoneClock"></span></div>
+    <div id="phoneNote" class="hidden"></div>
+    <div id="phoneBody"></div>
+    <div id="phoneTabs"><button data-tab="ride" class="on">🛺<span>Ride</span></button><button data-tab="reviews">⭐<span>Reviews</span></button><button data-tab="earn">₹<span>Earnings</span></button><button data-tab="road">📍<span>Road</span></button></div>
+  </div>
+  <button id="phoneMini" class="glass"></button>
+  <div id="bubbles"></div>
+  <div id="toasts"></div>
+  <div id="prompt"></div>
+  <div id="bubble" class="glass hidden"><b id="bName"></b><span id="bText"></span><span id="bEng"></span></div>
+  <button id="actBtn" class="btn hidden"></button>
+  <div id="flash"></div>
+  <div id="touch">
+    <div class="tl"><button class="steer" data-k="left">◀</button><button class="steer" data-k="right">▶</button></div>
+    <div class="tr"><button class="horn" data-k="horn">📯</button><button class="brake" data-k="brake">BRAKE</button><button class="gas" data-k="gas">GO</button></div>
+  </div>
+</div>
+
+<div id="accScreen" class="screen">
+  <div class="card">
+    <div class="logoBox"><img src="icons/icon-192.png" alt=""><div><div class="logo">வண்டி<br><span class="ml">വണ്ടി</span></div><small>Vandi · Kerala & Tamil Nadu roads</small></div></div>
+    <p class="tagline">Drive autos, taxis, buses and cars through all 52 district headquarters of Kerala and Tamil Nadu. Earn fares, buy better vehicles, and stay ahead of the police.</p>
+    <div id="accList"></div>
+    <hr>
+    <b>Create an account</b>
+    <label class="field">Driver name <input id="newName" maxlength="20" autocomplete="off"></label>
+    <label class="field">4-digit PIN <input id="newPin" maxlength="4" inputmode="numeric" type="password" autocomplete="off"></label>
+    <label class="field">Start in <select id="startCity"></select></label>
+    <div class="err" id="newErr"></div>
+    <div class="row"><button class="btn" id="newGo">Create & play</button><button class="btn ghost hidden" id="installBtn">📲 Install app</button></div>
+    <p class="small">Accounts and progress are saved on this phone. The PIN stops others on the same phone opening your save. It isn't strong security. Settings has a backup code you can use to move your save.</p>
+    <div class="keys">Keyboard: W/↑ go · S/↓ brake · A/D steer · H horn · F get out / in · E action · R radio · C camera · M map · P pause. Gamepads work too.</div>
+  </div>
+  <div id="pinBox" class="screen hidden"><div class="card" style="max-width:340px">
+    <b>PIN for <span id="pinFor"></span></b>
+    <label class="field"><input id="pinIn" maxlength="4" inputmode="numeric" type="password" autocomplete="off"></label>
+    <div class="err" id="pinErr"></div>
+    <div class="row"><button class="btn" id="pinGo">Play</button><button class="btn ghost" id="pinCancel">Cancel</button></div>
+  </div></div>
+</div>
+
+<div id="pause" class="screen hidden"><div class="card">
+  <h2 style="margin:0;color:var(--green)">Paused</h2>
+  <p id="pStats" class="small"></p>
+  <div id="pBtns">
+    <button class="btn" id="pResume">Resume</button>
+    <button class="btn" id="pMap">🗺 Travel map</button>
+    <button class="btn" id="pGarage">🔧 My vehicles</button>
+    <button class="btn" id="pSettings">⚙ Settings & backup</button>
+    <button class="btn ghost" id="pLogout">Save & switch account</button>
+  </div>
+  <p class="small">Every city has a car showroom, auto showroom, taxi showroom and bus dealer. Petrol pumps repair damage. Get out (🚶) to walk into temples, churches, mosques and museums.</p>
+</div></div>
+
+<div id="modal" class="screen hidden"><div class="card"><div id="modalBody"></div><div id="modalBtns"></div></div></div>
+
+<div id="mapScreen" class="screen hidden"><div class="card">
+  <div class="row"><b style="font-size:20px;color:var(--green)">Kerala & Tamil Nadu</b><button class="btn small ghost" id="mapClose">✕ Close</button></div>
+  <canvas id="stateMap"></canvas>
+  <div id="cityCard"></div>
+</div></div>
+
+<div id="loading" class="screen hidden"><div class="card"><img src="icons/icon-192.png" alt="" style="width:96px;border-radius:20px"><p id="loadTxt">Loading…</p></div></div>
+<div id="rotate" class="screen"><div class="card" style="text-align:center"><div style="font-size:48px">📱↻</div><b>Turn your phone sideways to drive</b></div></div>
+
+<script src="js/three.min.js"></script>
+<script src="js/data.js"></script>
+<script src="js/models.js"></script>
+<script src="js/world.js"></script>
+<script src="js/interiors.js"></script>
+<script src="js/data2.js"></script>
+<script src="js/systems.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
