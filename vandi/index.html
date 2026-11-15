@@ -53,67 +53,118 @@ textarea{font-family:"Share Tech Mono",monospace;font-size:11px;resize:none;user
 hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
 .row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin:8px 0}
 .row select{width:auto}
-/* HUD */
-#hud{position:fixed;inset:0;pointer-events:none;z-index:5}
+/* HUD (Vandi style: dark glass, gold accents) */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:5;font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
 #hud button{pointer-events:auto}
-#topL{position:absolute;left:max(10px,env(safe-area-inset-left));top:10px;display:flex;flex-direction:column;gap:8px;width:250px}
-#meter{padding:8px 12px}
-.mrow{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;letter-spacing:1px}
-.led{width:10px;height:10px;border-radius:50%;box-shadow:0 0 8px currentColor}
-.led.vac{background:#2ecc40;color:#2ecc40}.led.hired{background:#ff3b30;color:#ff3b30}
-#fare{font-family:"Share Tech Mono",monospace;font-size:30px;color:#c0392b;background:#1a1510;border-radius:8px;padding:2px 10px;margin:4px 0;text-shadow:0 0 6px rgba(255,60,40,.6)}
-#fareSub{font-size:12px;line-height:1.2}
-#moneyBox{padding:6px 12px;display:flex;justify-content:space-between;align-items:center}
-#money{font-weight:800;font-size:22px;color:var(--green)}
-#stars{font-size:20px;color:#9a9a9a;letter-spacing:1px}
+.glass{background:rgba(14,22,30,.78);color:#f6efd9;border:1.5px solid rgba(244,208,63,.55);border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#topL{position:absolute;left:max(10px,env(safe-area-inset-left));top:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.hudBtns{display:flex;gap:6px}
+.hb{width:40px;height:40px;border-radius:12px;border:1.5px solid rgba(244,208,63,.6);background:rgba(14,22,30,.78);color:#f6efd9;font-size:16px;font-weight:800;cursor:pointer}
+#vehTxt{padding:3px 10px;font-size:12px}
+#saveTxt{font-size:10px;color:#fff;text-shadow:0 1px 2px #000;padding-left:4px}
+#banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:min(52vw,640px);text-align:center;background:rgba(246,239,217,.95);color:#1c1a14;border-radius:16px;padding:8px 18px;border:2px solid #c9a227;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+#banner small{display:block;font-weight:800;letter-spacing:2px;color:#8a6d12;font-size:11px}#banner b{display:block;font-size:20px;line-height:1.25}#banner span{display:block;font-size:12px;opacity:.75}
+#topR{position:absolute;right:max(10px,env(safe-area-inset-right));top:10px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#earnCard{width:230px;padding:8px 12px}
+.erow{display:flex;justify-content:space-between;align-items:baseline}
+.lbl{font-size:11px;font-weight:800;letter-spacing:2px;opacity:.8}
+#money{font-size:28px;line-height:1.05;color:#7dffb0}#money.neg{color:#ff8a7a}
+.goal{font-size:12px;opacity:.85}.goal b{color:#f4d03f}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.15);margin:5px 0;overflow:hidden}.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#f4d03f,#7dffb0)}
+#earnSub{font-size:12px;opacity:.85}
+#stars{font-size:15px;color:#777;letter-spacing:1px}
 #stars.on{color:#ff3b30;animation:blink .6s infinite}
 @keyframes blink{50%{color:#0a84ff}}
-#vehTxt{font-size:12px;padding:4px 10px}
-#topC{position:absolute;left:50%;top:10px;transform:translateX(-50%);text-align:center;padding:5px 14px;min-width:200px}
-#topC b{font-size:18px;margin:0 8px}
-#cityLine{font-size:12px;font-weight:700;color:var(--green)}
-#festTxt{font-size:12px;color:#6c3483;font-weight:700}
-#mapWrap{position:absolute;right:max(10px,env(safe-area-inset-right));top:10px;width:150px}
-#mini{width:150px;height:150px;border-radius:50%;display:block;box-shadow:0 4px 14px rgba(0,0,0,.4)}
-.hudBtns{display:flex;gap:6px;justify-content:center;margin-top:6px}
-.hb{width:42px;height:42px;border-radius:50%;border:2px solid var(--gold);background:rgba(246,239,217,.95);font-size:17px;font-weight:800;cursor:pointer}
-#saveTxt{font-size:10px;color:#fff;text-align:center;text-shadow:0 1px 2px #000;margin-top:4px}
-#speedo{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);padding:4px 14px;display:flex;align-items:baseline;gap:6px}
-#spd{font-family:"Share Tech Mono",monospace;font-size:30px}
-#speedo.over #spd{color:#e74c3c}
-#limit{width:30px;height:30px;border-radius:50%;border:4px solid #e74c3c;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;align-self:center}
-#toasts{position:absolute;top:78px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(90vw,460px)}
-.toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
-.toast.good{border-color:#27ae60;color:#145a32}.toast.bad{border-color:#e74c3c;color:#922b21;background:#fff0ee}
-.toast.out{opacity:0;transform:translateY(-8px)}
-#prompt{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);color:#fff;font-weight:800;font-size:17px;text-shadow:0 2px 4px #000;white-space:nowrap}
-#bubble{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);max-width:min(88vw,460px);padding:8px 14px;border-radius:14px}
-#bName{display:block;color:#7a5c00;font-size:13px}#bText{display:block;font-size:17px;font-weight:700}#bEng{display:block;font-size:12px;opacity:.75}
-#actBtn{position:absolute;left:50%;bottom:205px;transform:translateX(-50%);font-size:17px}
+#gpsWrap{position:relative;width:220px;display:flex;flex-direction:column;align-items:center;gap:5px}
+#gps{width:220px;height:220px;border-radius:50%;box-shadow:0 8px 22px rgba(0,0,0,.45)}
+#clockPill{padding:2px 12px;font-size:13px}#clockPill b{font-family:"Share Tech Mono",monospace;font-size:17px;color:#f4d03f}
+#radioChip{padding:3px 10px;font:inherit;font-size:12px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;display:flex;gap:5px;align-items:center}
+#radioChip.on i{width:8px;height:8px;border-radius:50%;background:#ff3b30;display:inline-block;animation:blink 1.2s infinite}
+#radioChip b{font-family:"Share Tech Mono",monospace;color:#7dffb0}
+#speedWrap{position:absolute;left:max(10px,env(safe-area-inset-left));bottom:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.spRow{display:flex;align-items:flex-end;gap:6px}
+#speedoC{width:180px;height:180px}
+#limit{width:46px;height:46px;border-radius:50%;border:6px solid #e53935;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;margin-bottom:8px;box-shadow:0 3px 10px rgba(0,0,0,.4)}
+#roadPill{padding:3px 12px;display:flex;flex-direction:column;line-height:1.15}#roadPill b{font-size:14px}#roadPill span{font-size:12px;color:#f4d03f}
+#meter{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);padding:6px 12px;min-width:270px;background:rgba(10,10,10,.82)}
+.mtop{display:flex;align-items:center;gap:8px;font-weight:800;font-size:12px;letter-spacing:1.5px}
+#nightTag{margin-left:auto;color:#ffd15c}
+.led{width:10px;height:10px;border-radius:50%;box-shadow:0 0 8px currentColor}
+.led.vac{background:#2ecc40;color:#2ecc40}.led.hired{background:#ff3b30;color:#ff3b30}
+.mgrid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px;margin-top:2px}
+.mgrid small{display:block;font-size:10px;opacity:.6;letter-spacing:1px}
+.mgrid b{font-family:"Share Tech Mono",monospace;font-size:28px;color:#ff4d3a;text-shadow:0 0 8px rgba(255,60,40,.6);line-height:1}
+#fareSub{font-size:11px;opacity:.8;margin-top:2px;max-width:300px}
+/* phone */
+#phone{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:12px;width:250px;background:#11161c;border:6px solid #1d232b;border-radius:28px;box-shadow:0 14px 30px rgba(0,0,0,.5);color:#1c1a14;overflow:hidden;pointer-events:auto;transform:rotate(-2deg);transition:transform .25s}
+#phone .notch{position:absolute;left:50%;top:5px;transform:translateX(-50%);width:70px;height:12px;border-radius:8px;background:#0b0e12;z-index:2}
+#phoneHead{background:#0f3b2e;color:#f6efd9;padding:20px 14px 6px;display:flex;justify-content:space-between;align-items:baseline}
+#phoneHead b{font-size:16px}#phoneHead i{color:#f4d03f;font-style:normal}#phoneClock{font-family:"Share Tech Mono",monospace;font-size:12px;opacity:.8}
+#phoneNote{background:#f4d03f;color:#2b1d00;font-size:12px;font-weight:700;padding:5px 12px}
+#phoneBody{background:#f6efd9;min-height:150px;max-height:230px;overflow:auto;padding:10px 12px;font-size:13px}
+#phoneTabs{display:grid;grid-template-columns:repeat(4,1fr);background:#fffaf0;border-top:1px solid #e6d9a8}
+#phoneTabs button{font:inherit;border:none;background:none;padding:5px 0 6px;font-size:16px;cursor:pointer;display:flex;flex-direction:column;align-items:center;color:#5a4a20}
+#phoneTabs button span{font-size:9px;font-weight:700}
+#phoneTabs button.on{color:#0f3b2e;background:#f4ecd0}
+.rq{display:flex;gap:10px;align-items:center}
+.av{width:42px;height:42px;border-radius:50%;background:#c97b3f;color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;flex:none}
+.rq .nm{font-weight:800;font-size:16px;line-height:1.1}.rq .meta{font-size:11px;opacity:.75}
+.rq .dist{margin-left:auto;text-align:right;line-height:1}.rq .dist b{font-size:22px}.rq .dist small{display:block;font-size:10px;opacity:.7}
+.pill{display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;padding:2px 8px;border-radius:10px;background:#f4d03f;color:#2b1d00}
+.pill.trip{background:#19c3b8;color:#032}
+.stat{background:#fff;border-radius:12px;padding:7px 10px;margin-top:8px;border:1px solid #eadfb8}
+.stat b{display:block}.stat span{font-size:11px;opacity:.75}
+.rv{border-bottom:1px solid #e6d9a8;padding:5px 0}.rv b{font-size:12px}.rv .st{color:#e0a400;font-size:12px}.rv p{margin:2px 0;font-size:12px}.rv p.n{font-size:12px;color:#5a4a20}
+.big{font-size:26px;font-weight:800;color:#0f3b2e}
+#phoneMini{display:none;position:absolute;right:max(12px,env(safe-area-inset-right));padding:6px 10px;font:inherit;font-size:12px;max-width:220px;text-align:left}
 #bubbles{position:absolute;inset:0;overflow:hidden}
 .sb{position:absolute;transform:translate(-50%,-100%);background:#fff;border:3px solid #e74c3c;border-radius:14px;padding:4px 11px;font-weight:800;font-size:15px;white-space:nowrap;color:#222;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
 .sb:after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-8px;border:8px solid transparent;border-top-color:inherit;border-bottom:0}
-.sb.angry,.sb.crash{border-color:#e74c3c;animation:shake .35s 2}.sb.police{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}
+.sb.angry,.sb.crash,.sb.cow,.sb.dog{border-color:#e74c3c;animation:shake .35s 2}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}
 @keyframes shake{25%{margin-left:-3px}75%{margin-left:3px}}
+#toasts{position:absolute;top:110px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(60vw,460px)}
+.toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
+.toast.good{border-color:#27ae60;color:#145a32}.toast.bad{border-color:#e74c3c;color:#922b21;background:#fff0ee}
+.toast.out{opacity:0;transform:translateY(-8px)}
+#prompt{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);color:#fff;font-weight:800;font-size:17px;text-shadow:0 2px 4px #000;white-space:nowrap}
+#bubble{position:absolute;left:50%;bottom:150px;transform:translateX(-50%);max-width:min(50vw,460px);padding:8px 14px}
+#bName{display:block;color:#f4d03f;font-size:13px}#bText{display:block;font-size:17px;font-weight:700}#bEng{display:block;font-size:12px;opacity:.75}
+#actBtn{position:absolute;left:50%;bottom:220px;transform:translateX(-50%);font-size:17px}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
 #flash.go{animation:fl .35s}
 @keyframes fl{0%{opacity:.85}100%{opacity:0}}
-/* touch controls */
+.checklist{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ck{padding:6px 10px;border-radius:10px;background:#fffaf0;border:1.5px solid #e6d9a8}.ck.bad{border-color:#e74c3c;background:#fff0ee}
+@media (max-height:820px){
+  #gpsWrap{width:180px} #gps{width:180px;height:180px}
+  #earnCard{width:200px} #money{font-size:24px}
+  #phone{width:230px} #phoneBody{min-height:110px;max-height:150px}
+  #speedoC{width:150px;height:150px}
+}
+#topR{z-index:2}
+/* touch layout */
 #touch{display:none}
 body.touch #touch{display:block}
-#touch .tl,#touch .tr{position:absolute;bottom:max(14px,env(safe-area-inset-bottom));display:flex;gap:12px;align-items:flex-end}
-#touch .tl{left:max(14px,env(safe-area-inset-left))}
-#touch .tr{right:max(14px,env(safe-area-inset-right))}
-#touch button{pointer-events:auto;border:3px solid rgba(201,162,39,.9);background:rgba(246,239,217,.55);border-radius:18px;font:800 18px inherit;font-family:inherit;color:#2b1d00;touch-action:none}
+#touch .tl,#touch .tr{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));display:flex;gap:10px;align-items:flex-end}
+#touch .tl{left:max(12px,env(safe-area-inset-left))}
+#touch .tr{right:max(12px,env(safe-area-inset-right))}
+#touch button{pointer-events:auto;border:3px solid rgba(201,162,39,.9);background:rgba(246,239,217,.45);border-radius:18px;font:800 16px inherit;font-family:inherit;color:#2b1d00;touch-action:none}
 #touch button.down{background:rgba(245,166,35,.85)}
-#touch .steer{width:78px;height:78px;font-size:28px}
-#touch .gas{width:84px;height:110px;background:rgba(46,204,64,.45)}
-#touch .brake{width:78px;height:84px;background:rgba(231,76,60,.45)}
-#touch .horn{width:56px;height:56px;border-radius:50%;font-size:22px}
-body.touch #speedo{bottom:auto;top:84px}
-body.touch #prompt{bottom:130px}
-body.touch #bubble{bottom:auto;top:130px}
-body.touch #actBtn{bottom:140px}
+#touch .steer{width:70px;height:70px;font-size:26px}
+#touch .gas{width:76px;height:100px;background:rgba(46,204,64,.45)}
+#touch .brake{width:70px;height:76px;background:rgba(231,76,60,.45)}
+#touch .horn{width:50px;height:50px;border-radius:50%;font-size:20px}
+body.touch #speedWrap{bottom:96px;transform:scale(.72);transform-origin:bottom left}
+body.touch #phone{display:none}
+body.touch #phone.open{display:block;bottom:auto;top:8px;right:auto;left:50%;transform:translateX(-50%) scale(.82);transform-origin:top center;z-index:9}
+body.touch #phone.open #phoneBody{max-height:150px;min-height:100px}
+body.touch #phoneMini{display:block;bottom:84px;right:auto;left:50%;transform:translateX(-50%);max-width:46vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.touch #clockPill,body.touch #radioChip{display:none}
+body.touch #meter{bottom:8px;min-width:0;transform:translateX(-50%) scale(.82);transform-origin:bottom center}
+body.touch #topR{transform:scale(.64);transform-origin:top right}
+body.touch #banner{transform:translateX(-50%) scale(.75);transform-origin:top center;max-width:60vw}
+body.touch #actBtn{bottom:130px}
+body.touch #bubble{bottom:auto;top:90px}
+body.touch #toasts{top:70px}
 /* modal & pause */
 #modal .card h2{margin:0 0 6px;color:var(--green)}
 .tabs{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
@@ -144,30 +195,51 @@ body.touch #actBtn{bottom:140px}
 
 <div id="hud" class="hidden">
   <div id="topL">
-    <div id="moneyBox" class="panel"><span id="money">₹0</span><span id="stars"></span></div>
-    <div id="meter" class="panel">
-      <div class="mrow"><span id="flag" class="led vac"></span><span id="flagTxt">VACANT</span></div>
-      <div id="fare">₹ ---</div>
-      <div id="fareSub"></div>
+    <div class="hudBtns">
+      <button class="hb" id="pauseBtn" title="Pause (P)">II</button>
+      <button class="hb" id="mapBtn" title="State map (M)">🗺</button>
+      <button class="hb" id="camBtn" title="Camera (C)">🎥</button>
+      <button class="hb" id="footBtn" title="Get out (F)">🚶</button>
+      <button class="hb" id="radioBtn" title="Radio (R)">📻</button>
     </div>
-    <div id="vehTxt" class="panel"></div>
-  </div>
-  <div id="topC" class="panel">
-    <div><span id="dayTxt">Day 1</span><b id="timeTxt">7:00 AM</b><span id="wx">☀</span></div>
-    <div id="cityLine"><span id="cityTxt"></span> · <span id="cityNt"></span></div>
-    <div id="festTxt"></div>
-  </div>
-  <div id="mapWrap">
-    <canvas id="mini" width="300" height="300"></canvas>
-    <div class="hudBtns"><button class="hb" id="mapBtn" title="State map (M)">🗺</button><button class="hb" id="camBtn" title="Camera (C)">🎥</button><button class="hb" id="pauseBtn" title="Pause (P)">II</button></div>
-    <div class="hudBtns"><button class="hb" id="footBtn" title="Get out (F)">🚶</button></div>
+    <div id="vehTxt" class="glass small"></div>
     <div id="saveTxt"></div>
   </div>
-  <div id="speedo" class="panel"><b id="spd">0</b><span>km/h</span><div id="limit">50</div></div>
+  <div id="banner" class="hidden"><small id="banTag"></small><b id="banNt"></b><span id="banEn"></span></div>
+  <div id="topR">
+    <div id="earnCard" class="glass">
+      <div class="erow"><span class="lbl">TODAY</span><span id="stars"></span></div>
+      <div class="erow"><b id="money">₹0</b><span class="goal">Goal <b id="goalTxt">₹1,000</b></span></div>
+      <div class="bar"><i id="netBar"></i></div>
+      <div id="earnSub" class="small"></div>
+    </div>
+    <div id="gpsWrap">
+      <canvas id="gps" width="440" height="440"></canvas>
+      <div id="clockPill" class="glass"><span id="wx">☀</span> <b id="timeTxt">7:00 AM</b> <span id="dayTxt">Day 1</span></div>
+      <button id="radioChip" class="glass">📻 <span>Radio off</span></button>
+    </div>
+  </div>
+  <div id="speedWrap">
+    <div id="roadPill" class="glass"><b id="roadEn"></b><span id="roadNt"></span></div>
+    <div class="spRow"><canvas id="speedoC" width="360" height="360"></canvas><div id="limit">50</div></div>
+  </div>
+  <div id="meter" class="glass">
+    <div class="mtop"><span id="flag" class="led vac"></span><span id="flagTxt">VACANT</span><span id="nightTag" class="hidden">🌙 +50%</span></div>
+    <div class="mgrid"><div><small>FARE ₹</small><b id="fare">---</b></div><div><small>KM</small><b id="kmTxt">0.0</b></div><div><small>TIME</small><b id="tripT">0:00</b></div></div>
+    <div id="fareSub"></div>
+  </div>
+  <div id="phone" class="open">
+    <div class="notch"></div>
+    <div id="phoneHead"><b>Vandi <i>Ride</i></b><span id="phoneClock"></span></div>
+    <div id="phoneNote" class="hidden"></div>
+    <div id="phoneBody"></div>
+    <div id="phoneTabs"><button data-tab="ride" class="on">🛺<span>Ride</span></button><button data-tab="reviews">⭐<span>Reviews</span></button><button data-tab="earn">₹<span>Earnings</span></button><button data-tab="road">📍<span>Road</span></button></div>
+  </div>
+  <button id="phoneMini" class="glass"></button>
   <div id="bubbles"></div>
   <div id="toasts"></div>
   <div id="prompt"></div>
-  <div id="bubble" class="panel hidden"><b id="bName"></b><span id="bText"></span><span id="bEng"></span></div>
+  <div id="bubble" class="glass hidden"><b id="bName"></b><span id="bText"></span><span id="bEng"></span></div>
   <button id="actBtn" class="btn hidden"></button>
   <div id="flash"></div>
   <div id="touch">
@@ -189,7 +261,7 @@ body.touch #actBtn{bottom:140px}
     <div class="err" id="newErr"></div>
     <div class="row"><button class="btn" id="newGo">Create & play</button><button class="btn ghost hidden" id="installBtn">📲 Install app</button></div>
     <p class="small">Accounts and progress are saved on this phone. The PIN stops others on the same phone opening your save. It isn't strong security. Settings has a backup code you can use to move your save.</p>
-    <div class="keys">Keyboard: W/↑ go · S/↓ brake · A/D steer · H horn · F get out / in · E action · C camera · M map · P pause. Gamepads work too.</div>
+    <div class="keys">Keyboard: W/↑ go · S/↓ brake · A/D steer · H horn · F get out / in · E action · R radio · C camera · M map · P pause. Gamepads work too.</div>
   </div>
   <div id="pinBox" class="screen hidden"><div class="card" style="max-width:340px">
     <b>PIN for <span id="pinFor"></span></b>
@@ -228,6 +300,8 @@ body.touch #actBtn{bottom:140px}
 <script src="js/models.js"></script>
 <script src="js/world.js"></script>
 <script src="js/interiors.js"></script>
+<script src="js/data2.js"></script>
+<script src="js/systems.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>
