@@ -175,6 +175,7 @@ function computeRoute(from, to){
 let ROUTE = null, routeT = 0;
 function routeTarget(){
   if (onFoot) return null;
+  if (W && !W.highway && typeof navCity === 'function') { const nc = navCity(); if (nc && (!RIDER || RIDER.inter)) { const ap = approachToward(nc); if (ap) return {x: ap.gate.x, z: ap.gate.z, ramp: ap}; } }
   if (RIDER) return RIDER.dest.stop || null;
   if (BUS) return BUS.stops[BUS.next];
   if (WAITING.length) return WAITING[0];
@@ -183,6 +184,7 @@ function routeTarget(){
 function updateRoute(dt){
   routeT -= dt; if (routeT > 0) return; routeT = 0.5;
   const t = routeTarget(); ROUTE = t ? computeRoute(me(), t) : null;
+  if (ROUTE && t.ramp) { const M = me(); const r = W.apprAt(M.x, M.z); ROUTE = r ? [{x:M.x, z:M.z}, t.ramp.top] : ROUTE.concat([t.ramp.top]); }
   if (ROUTE) { let L = 0; for (let i = 1; i < ROUTE.length; i++) L += Math.abs(ROUTE[i].x-ROUTE[i-1].x) + Math.abs(ROUTE[i].z-ROUTE[i-1].z); ROUTE.len = L; }
 }
 

@@ -66,6 +66,7 @@ function kmStoneTex(name, km){
   });
 }
 
+function smooth01(t){ t = Math.max(0, Math.min(1, t)); return t*t*(3 - 2*t); }
 function buildHighway(from, to, scene, opts){
   const R = mulberry(hashStr(from.id + '>' + to.id));
   const realKm = Math.max(20, Math.round(haversine(from, to) * 1.3));
@@ -76,7 +77,7 @@ function buildHighway(from, to, scene, opts){
   const W = {highway: true, city: from, fromId: from.id, toId: to.id, from, to, nh, KL: from.st === 'KL', group, len: L, realKm,
     pois: [], signals: [], sigSet: new Set(), cams: [], crossings: [], pillars: [], straight: [], roadLines: [], rows: [], cols: [], winMats: [],
     lampMat: dummyM, sigLamp: [[[dummyM,dummyM,dummyM],[dummyM,dummyM,dummyM]],[[dummyM,dummyM,dummyM],[dummyM,dummyM,dummyM]]], festDecor: new THREE.Group(),
-    spawn: {x: 4.5, z: 18, h: 0}, exits: [], border: null, N: 1};
+    spawn: {x: 7.8, z: -88, h: 0}, exits: [], border: null, N: 1, approaches: []};
   W.isCrossing = () => false; W.tileAt = () => ROAD; W.isRoad = () => true; W.isInter = () => false; W.poiBy = t => W.pois.filter(p => p.type === t);
   const kmAt = z => Math.max(0, Math.round((L - z) / L * realKm));
 
@@ -102,11 +103,34 @@ function buildHighway(from, to, scene, opts){
   W.collide = (px, pz, r) => {
     let hit = false;
     if (Math.abs(px) < 0.7 + r && pz > -5 && pz < L + 5) { hit = true; px = Math.sign(px || 1) * (0.7 + r); }
-    if (pz < -18) { hit = true; pz = -18; }
+    if (pz < -100) { hit = true; pz = -100; }
+    // flyover decks at both ends: stay between the railings while up on them
+    if (W.heightAt(px < 5.2 ? 7.8 : px, pz) > 1.2 && (pz < -20 || pz > L - 110)) {
+      if (px < 5.4 + r) { hit = true; px = 5.4 + r; } if (px > 10.2 - r) { hit = true; px = 10.2 - r; }
+    }
     if (Math.abs(px) > 85) { hit = true; px = Math.sign(px) * 85; }
+    for (const tl of (W.tolls || [])) for (const bx of tl.islands) if (Math.abs(pz - tl.z) < 4.5 + r && Math.abs(px - bx) < 0.9 + r) { hit = true; px = bx + Math.sign(px - bx || 1)*(0.9 + r); }
     for (const p of pads) if (px > 18.5 && px < 26.5 && Math.abs(pz - p - 0) < 5) { hit = true; px = 18.5 - r; }
     return {x: px, z: pz, hit};
   };
+  // flyovers: come down into the highway at the start, climb up into the next town at the end
+  const fyH = z => z < -60 ? 7 : z < -12 ? 7*(1 - smooth01((z + 60)/48)) : z > L - 50 ? 7 : z > L - 110 ? 7*smooth01((z - (L - 110))/60) : 0;
+  W.heightAt = (x, z) => (x > 5.2 && x < 10.5) ? fyH(z) : 0;
+  {
+    const segs = 30;
+    const deckMat = new THREE.MeshLambertMaterial({map: rampTex()}), wallM = new THREE.MeshLambertMaterial({color: 0xc9c3b6, side: THREE.DoubleSide});
+    [[-110, 0], [L - 120, L + 130]].forEach(([z0, z1]) => {
+      const g = new THREE.Group(); g.position.set(7.8, 0, z0);
+      const hf = s2 => fyH(z0 + s2), len = z1 - z0;
+      g.add(rampStrip(5.4, len, hf, 0, deckMat, segs, 0.08));
+      [-2.75, 2.75].forEach(x => g.add(rampWall(len, hf, x, 1.0, wallM, segs)));
+      group.add(g);
+    });
+    const tex = makeSignTexture([nh + '  ·  ' + to.en + '  ' + realKm + ' km', to.nt + '  ·  ' + (HINDI[to.id] || '')], '#0d6b3a', '#fff', 1024, 240);
+    const bd = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.2), new THREE.MeshBasicMaterial({map: tex, side: THREE.DoubleSide})); bd.rotation.y = Math.PI; bd.position.set(7.8, 7 + 5.2, -40 - 30); group.add(bd);
+    const tex2 = makeSignTexture(['Welcome to ' + to.en, to.nt], '#0d6b3a', '#fff', 768, 220);
+    const bd2 = new THREE.Mesh(new THREE.PlaneGeometry(7, 2.2), new THREE.MeshBasicMaterial({map: tex2, side: THREE.DoubleSide})); bd2.rotation.y = Math.PI; bd2.position.set(7.8, 7 + 4.6, L - 30); group.add(bd2);
+  }
   W.roadAt = (x, z) => ({name: [nh + ' · ' + to.en, (W.KL ? 'ദേശീയ പാത ' : 'தேசிய நெடுஞ்சாலை ') + nh.split(' ')[1]]});
 
   // ---- road surface (repeating texture)
@@ -200,9 +224,20 @@ function buildHighway(from, to, scene, opts){
     }
   });
 
+  // ---- toll plazas and the state border check post
+  W.tolls = [];
+  const tollAt = [0.42]; if (L > 2600) tollAt.push(0.8);
+  tollAt.forEach(f => {
+    let z = Math.round(L*f);
+    for (let k = 0; k < 8 && (W.exits.some(e => Math.abs(e.z - z) < 170) || (W.border && Math.abs(W.border.z - z) < 220) || W.cams.some(c => Math.abs(c.z - z) < 60)); k++) z += 90;
+    if (z > L - 200) return;
+    W.tolls.push(buildTollPlaza(W, z, false));
+  });
+  if (W.border) W.tolls.push(buildTollPlaza(W, W.border.z + 70, true));
+
   // ---- petrol pumps along the way (left side, our direction)
   for (let z = 420; z < L - 200; z += 650 + Math.floor(R()*200)) {
-    if (W.exits.some(e => Math.abs(e.z - z) < 140) || (W.border && Math.abs(W.border.z - z) < 80)) continue;
+    if (W.exits.some(e => Math.abs(e.z - z) < 140) || (W.border && Math.abs(W.border.z - z) < 160) || W.tolls.some(t => Math.abs(t.z - z) < 120)) continue;
     pads.push(z);
     const pad = new THREE.Mesh(new THREE.PlaneGeometry(20, 44), mat(0x8b8b8b)); pad.rotation.x = -Math.PI/2; pad.position.set(20, 0.03, z); group.add(pad);
     const p = {type:'petrol', en:'Highway Fuels', nt: W.KL ? 'ഹൈവേ ഫ്യൂവൽസ്' : 'ஹைவே ஃப்யூயல்ஸ்', tx:0, tz:0, d:[-1,0], x: 22, z, stop: {x: 14, z}, holy: false, col: '#d35400'};
@@ -229,4 +264,55 @@ function buildHighway(from, to, scene, opts){
     {axis:'z', fixed: -3.9, idx: -96, min: -120, max: L + 120, dirFixed: -1, name: [nh, nh]},
   ];
   return W;
+}
+
+// Toll plaza (or state border check post) across the highway at z
+function buildTollPlaza(W, z, border){
+  const g = new THREE.Group(); g.position.set(0, 0, z); W.group.add(g);
+  const KL = border ? W.border.st === 'KL' : W.KL;
+  const islands = border ? [10.9] : [5.9, 10.9];
+  // canopy over both carriageways
+  const roofC = border ? 0x1f3a93 : 0xc0392b;
+  addBox(g, 24, 0.8, 9, mat(roofC), 0, 6.6, 0);
+  addBox(g, 24.2, 0.25, 9.2, mat(0xf4f4f0), 0, 7.1, 0);
+  [-11.8, -5.9, 5.9, 11.8].forEach(x => addBox(g, 0.5, 6.6, 0.5, mat(0xd8d8d0), x, 3.3, 0));
+  // booths on islands (our side and the other side)
+  [...islands, -5.9, -10.9].forEach(x => {
+    addBox(g, 1.8, 0.3, 9, mat(0xf2c21b), x, 0.15, 0);
+    for (let k = -4; k <= 4; k += 1) addBox(g, 1.82, 0.31, 0.5, mat(0x222222), x, 0.16, k);
+    addBox(g, 1.5, 2.6, 2.4, mat(0xf4efe0), x, 1.6, 0.8);
+    addBox(g, 1.52, 0.9, 1.6, mat(0x5dade2), x, 2.2, 0.8);
+    const lt = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.2), new THREE.MeshBasicMaterial({color: 0x22cc44})); lt.position.set(x - 0.2, 5.6, -4.2); g.add(lt);
+  });
+  // boom barriers for our lanes
+  const lanes = border ? [{x0: 0.8, x1: 10.0, cx: 5.4}] : [{x0: 0.8, x1: 5.0, cx: 2.9}, {x0: 6.8, x1: 10.0, cx: 8.4}];
+  const pivX = border ? [10.9] : [5.9, 10.9];
+  lanes.forEach((ln, i) => {
+    const px = pivX[i];
+    const pivot = new THREE.Group(); pivot.position.set(px - 0.9, 1.05, -3.2); g.add(pivot);
+    const arm = new THREE.Group(); pivot.add(arm);
+    const len = px - 0.9 - ln.x0;
+    const nseg = Math.max(3, Math.round(len/1.1));
+    for (let k = 0; k < nseg; k++) { const seg = new THREE.Mesh(boxGeo(len/nseg, 0.14, 0.14), mat(k%2 ? 0xd91e18 : 0xffffff)); seg.position.set(-(k + 0.5)*len/nseg, 0, 0); arm.add(seg); }
+    ln.pivot = pivot; ln.arm = arm; ln.ang = 0; ln.broken = false;
+  });
+  // sign on the canopy facing traffic
+  const hi = border ? (KL ? 'केरल चेक पोस्ट' : 'तमिलनाडु चेक पोस्ट') : 'टोल प्लाज़ा';
+  const lines = border
+    ? [(KL ? 'KERALA' : 'TAMIL NADU') + ' CHECK POST · STOP', (KL ? 'കേരള ചെക്ക് പോസ്റ്റ്' : 'தமிழ்நாடு சோதனைச் சாவடி') + ' · ' + hi]
+    : ['TOLL PLAZA · ' + W.nh + ' · STOP & PAY', (W.KL ? 'ടോൾ പ്ലാസ' : 'சுங்கச் சாவடி') + ' · ' + hi];
+  const tex = makeSignTexture(lines, border ? '#1f3a93' : '#c0392b', '#ffffff', 1024, 200);
+  const sb = new THREE.Mesh(new THREE.PlaneGeometry(14, 2.4), new THREE.MeshBasicMaterial({map: tex, side: THREE.DoubleSide}));
+  sb.rotation.y = Math.PI; sb.position.set(0, 6.6, -4.65); g.add(sb);
+  // rumble strips & STOP marking
+  for (let k = 0; k < 5; k++) addBox(g, 9.6, 0.05, 0.5, mat(0xf2f2f2), 5.5, 0.04, -12 - k*2.2);
+  const offs = [];
+  if (border) {
+    // police at the check post
+    for (let k = 0; k < 3; k++) { const o = makePerson(0xb08d57, 0x8a6d3b, 0x6b4430); o.position.set(11.8 + (k%2)*0.8, 0, -6 + k*1.6); o.rotation.y = -Math.PI/2; g.add(o); offs.push({mesh: o, x: 11.8, z: z - 6 + k*1.6}); }
+    const jeep = makeVehicle('police', {len:4.4, wid:1.8, id:'police'}, null); jeep.position.set(14.5, 0, 8); jeep.rotation.y = Math.PI; g.add(jeep);
+    // drums
+    for (let k = 0; k < 4; k++) { const d = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.9, 10), mat(k%2 ? 0xffffff : 0xd91e18)); d.position.set(k < 2 ? 1.1 : 10.1, 0.45, -14 - (k%2)*4); g.add(d); }
+  }
+  return {z, border, st: border ? W.border.st : null, lanes, islands, offs, paid: false, passed: false, stopT: 0, fee: 0};
 }

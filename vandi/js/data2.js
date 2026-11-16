@@ -214,6 +214,36 @@ REACT.hurt = {
   ta:['ஐயோ என் காலு!','அம்மா, வலிக்குது!','யாராவது ஆம்புலன்ஸ் கூப்பிடுங்க!','நீ என்னை இடிச்சிட்ட!','நிறுத்து! நீ என்னை இடிச்சிட்ட!'],
 };
 
+// Your own passenger shouting at you
+REACT.rider = {
+  en:['Why did you jump the signal?!','That was a red light! Are you mad?','Hey! The light was red!','Do you want us both arrested?','Stop jumping signals, I am not in that big a hurry!'],
+  mg:['Enthinaa signal chaadiyathu?!','Athu red aayirunnu! Ninakku vattaano?','Hey! Red light aayirunnu!','Nammal randum police-il aakano?','Signal chaadalle, enikku athra dhruthi illa!'],
+  ml:['എന്തിനാ സിഗ്നൽ ചാടിയത്?!','അത് റെഡ് ആയിരുന്നു! നിനക്ക് വട്ടാണോ?','ഹേയ്! റെഡ് ലൈറ്റ് ആയിരുന്നു!','നമ്മൾ രണ്ടും പോലീസിൽ ആകണോ?','സിഗ്നൽ ചാടല്ലേ, എനിക്ക് അത്ര ധൃതി ഇല്ല!'],
+  tg:['Yen signal-a jump panneenga?!','Adhu red light! Ungalukku paithiyama?','Hey! Red light-nga!','Rendu perum police kitta maatanuma?','Signal jump pannaadheenga, enakku avlo avasaram illa!'],
+  ta:['ஏன் சிக்னலை ஜம்ப் பண்ணீங்க?!','அது ரெட் லைட்! உங்களுக்கு பைத்தியமா?','ஹே! ரெட் லைட்ங்க!','ரெண்டு பேரும் போலீஸ் கிட்ட மாட்டணுமா?','சிக்னல் ஜம்ப் பண்ணாதீங்க, எனக்கு அவ்வளவு அவசரம் இல்ல!'],
+};
+REACT.riderCrash = {
+  en:['Watch where you are going!','Are you trying to kill me?!','Ayyo! Drive carefully!','I am not paying for this ride!','My head hit the roof!'],
+  mg:['Nokki odikkada!','Enne konnu kalayaano?!','Ayyo! Sookshichu odikku!','Ee ride-inu njan kaasu tharilla!','Ente thala mukalil idichu!'],
+  ml:['നോക്കി ഓടിക്കെടാ!','എന്നെ കൊന്നു കളയാനോ?!','അയ്യോ! സൂക്ഷിച്ച് ഓടിക്ക്!','ഈ റൈഡിന് ഞാൻ കാശ് തരില്ല!','എന്റെ തല മുകളിൽ ഇടിച്ചു!'],
+  tg:['Paathu ottunga!','Enna kolla paakreengala?!','Aiyo! Kavanama ottunga!','Indha ride-ku naan kaasu tharamaatten!','En thala mela idichiduchu!'],
+  ta:['பாத்து ஓட்டுங்க!','என்னைக் கொல்லப் பாக்குறீங்களா?!','ஐயோ! கவனமா ஓட்டுங்க!','இந்த ரைடுக்கு நான் காசு தரமாட்டேன்!','என் தலை மேல இடிச்சிடுச்சு!'],
+};
+REACT.riderSpeed = {
+  en:['Slow down! That camera just flashed!','You got us a speeding fine!','Too fast! Slow down please!'],
+  mg:['Speed kurakku! Camera flash aayi!','Overspeed fine kitti!','Bhayankara speed! Onnu kurakku!'],
+  ml:['സ്പീഡ് കുറയ്ക്ക്! ക്യാമറ ഫ്ലാഷ് ആയി!','ഓവർസ്പീഡ് ഫൈൻ കിട്ടി!','ഭയങ്കര സ്പീഡ്! ഒന്ന് കുറയ്ക്ക്!'],
+  tg:['Speed korainga! Camera flash aachu!','Overspeed fine vandhuduchu!','Romba speed! Konjam korainga!'],
+  ta:['ஸ்பீடு குறைங்க! கேமரா ஃபிளாஷ் ஆச்சு!','ஓவர்ஸ்பீடு ஃபைன் வந்துடுச்சு!','ரொம்ப ஸ்பீடு! கொஞ்சம் குறைங்க!'],
+};
+REACT.riderGun = {
+  en:['They are SHOOTING at us!','Get down! Get down!','Just stop the vehicle!'],
+  mg:['Avar nammale vedi vekkunnu!','Kuniyu! Kuniyu!','Vandi nirthu!'],
+  ml:['അവർ നമ്മളെ വെടി വെക്കുന്നു!','കുനിയ്! കുനിയ്!','വണ്ടി നിർത്ത്!'],
+  tg:['Avanga namma mela sudraanga!','Kuninjukonga!','Vandiya niruthunga!'],
+  ta:['அவங்க நம்ம மேல சுடுறாங்க!','குனிஞ்சுக்கோங்க!','வண்டியை நிறுத்துங்க!'],
+};
+
 // ---------- Radio: made-up artists & genres, news ----------
 const ARTISTS = {
   KL: ['Arjun Ravi','Meera Nair','Kayal Collective','Nikhil Thomas','Anjali Menon','The Monsoon Band','Rahul Krishnan','Sneha Joseph','Malabar Rhythm Co.','Vishnu Prasad','Fathima Beevi','Thira Project','Aswin & the Backwaters','Diya Mariam','Kochi Night Shift'],

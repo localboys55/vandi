@@ -3,7 +3,11 @@
 
 const T = 14, HALF = 7, ROAD_HALF = 4.6;
 const ROAD = 1, BUILD = 2, GRASS = 3, WATER = 5, PUMP = 6, RAIL = 7;
-const METRO_CITIES = ['che','ekm','cbe','mdu'], RAIL_CITIES = ['tvm','kkd','try','slm'];
+const METRO_CITIES = ['che','ekm','cbe','mdu'];
+const RAIL_CITIES = ['tvm','kkd','try','slm','che','ekm','cbe','mdu','tsr','klm','knr','pkd','alp','ktm','ksd','tvl','tut','erd','tnj','vlr','dgl','ngl','krr','vpm','tup','cgl','tlr','myl'];
+// Town grid size (tiles per side), tiered by the real size of each city
+const TOWN_SIZE = {che:64, cbe:54, mdu:54, ekm:52, tvm:52, kkd:50, try:50, slm:48, tup:46, tsr:46, vlr:44, tvl:44, erd:44, klm:44, knr:42, tut:42, tnj:42, pkd:40, dgl:40, ngl:40, ktm:40, alp:40, cgl:40, tlr:40, kpm:40, cud:38, krr:38, vpm:38, ksd:38, mlp:38, nmk:36, svg:34, thn:36, tks:34, myl:34, ngp:34, rmd:34, pdk:36, vnr:36, kgi:36, dpi:36, rpt:36, tpt:34, tvr:34, ooty:34, pta:32, ari:30, pmb:30, kkr:30, wyd:30, idk:28};
+function townSize(c){ return TOWN_SIZE[c.id] || (c.big ? 46 : 36); }
 
 function hashStr(s){ let h = 2166136261; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h>>>0; }
 function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -54,7 +58,7 @@ function makeSignTexture(lines, bg, fg, w, h) {
 function buildTown(city, scene, opts) {
   const R = mulberry(hashStr(city.id));
   const KL = city.st === 'KL';
-  const N = city.big ? 46 : 36;
+  const N = townSize(city);
   const W = {city, N, KL, R, group: new THREE.Group(), pois: [], busStops: [], signals: [], cams: [], roadLines: [], lamps: []};
   scene.add(W.group);
   const tiles = new Uint8Array(N*N);
@@ -79,7 +83,11 @@ function buildTown(city, scene, opts) {
     else t = R() < 0.84 ? BUILD : GRASS;
     tiles[tz*N+tx] = t;
   }
-  const tileAt = (tx,tz) => (tx<0||tz<0||tx>=N||tz>=N) ? WATER : tiles[tz*N+tx];
+  // --- Highway approaches: a road leaves the town at each edge and climbs a flyover
+  W.approaches = townApproaches(city, N, rows, cols, maxRoad, waterRows);
+  const APPR = new Set();
+  W.approaches.forEach(a => { for (let k = 1; k <= 9; k++) APPR.add(a.ax === 'x' ? (a.sgn > 0 ? N-1+k : -k) + ',' + a.idx : a.idx + ',' + (a.sgn > 0 ? N-1+k : -k)); });
+  const tileAt = (tx,tz) => (tx<0||tz<0||tx>=N||tz>=N) ? (APPR.has(tx+','+tz) ? ROAD : WATER) : tiles[tz*N+tx];
   W.tileAt = tileAt;
   const isRoad = (tx,tz) => tileAt(tx,tz) === ROAD;
   W.isRoad = isRoad;
@@ -113,13 +121,25 @@ function buildTown(city, scene, opts) {
       for (let tx = 0; tx < N; tx++) if (!colSet.has(tx)) tiles[r*N+tx] = RAIL; else W.crossings.push({tx, tz:r, closed:false, ang:Math.PI/2});
     }
   }
-  if (METRO_CITIES.includes(city.id)) W.metroRow = rows[Math.floor(rows.length/2)];
+  if (W.railRow !== undefined) {
+    // railway station: platforms on the line between two column roads, building beside it
+    const cc = cols.slice(1, -1).sort((a,b) => Math.abs(a - N/2) - Math.abs(b - N/2));
+    for (const c of cc) {
+      if ([1,2,3].some(k => colSet.has(c+k))) continue;
+      W.station = {c, x0:(c+1)*T - HALF, x1:(c+3)*T + HALF, x:(c+2)*T, tz:W.railRow+1};
+      [1,2,3].forEach(k => { tiles[(W.railRow+1)*N + c+k] = BUILD; });
+      break;
+    }
+  }
+  if (METRO_CITIES.includes(city.id)) { let mr = rows[Math.floor(rows.length/2)]; if (mr === W.railRow || Math.abs(mr - (W.railRow||-99)) < 2) mr = rows[Math.floor(rows.length/2)+1]; W.metroRow = mr; }
   W.isCrossing = (tx,tz) => W.railRow === tz && colSet.has(tx);
 
   // --- Points of interest
   const want = ['busstand','temple','church','mosque','museum','rto','police','hospital','carshow','autoshow','taxishow','busshow','petrol','restaurant','restaurant','tea','textiles','bakery','school','market'];
-  if (city.big) want.push('mall','college','rail','restaurant','petrol');
-  else if (R() < 0.6) want.push('rail');
+  const bigTown = N >= 46;
+  if (bigTown) want.push('mall','college','restaurant','petrol');
+  if (N >= 52) want.push('mall','restaurant','tea','hospital','bakery','textiles','market','temple','church','mosque');
+  if (!W.station && (bigTown || R() < 0.6)) want.push('rail');
   const cand = [];
   for (let tz = 1; tz < N-1; tz++) for (let tx = 1; tx < N-1; tx++) {
     if (tileAt(tx,tz) !== BUILD) continue;
@@ -130,6 +150,12 @@ function buildTown(city, scene, opts) {
   for (let i = cand.length-1; i > 0; i--) { const j = Math.floor(R()*(i+1)); [cand[i],cand[j]] = [cand[j],cand[i]]; }
   const used = [];
   const bizCount = {};
+  if (W.station) {
+    const st = W.station, pt = PLACE_TYPES.rail, best = {tx:st.c+1, tz:st.tz, d:[-1,0]};
+    used.push(best, {tx:st.c+2, tz:st.tz}, {tx:st.c+3, tz:st.tz});
+    const roadC = {x:(best.tx-1)*T, z:best.tz*T};
+    W.pois.push({type:'rail', en:city.en + ' ' + pt.en, nt:city.nt + ' ' + pt[city.st], tx:best.tx, tz:best.tz, d:best.d, x:best.tx*T, z:best.tz*T, stop:{x:roadC.x + 3.2, z:roadC.z}, holy:false, col:pt.col, station:true});
+  }
   want.forEach(type => {
     // bus stand near centre
     let best = null;
@@ -176,7 +202,7 @@ function buildTown(city, scene, opts) {
     W.busStops.push({tx:s.tx, tz:s.tz, h:s.h, side, x:bx, z:bz, name:['Junction','Stop','Kavala','Corner','Nagar','Road'][W.busStops.length]});
   }
   // speed cameras
-  straight.slice().sort(() => R()-0.5).slice(0, city.big ? 6 : 4).forEach(s => {
+  straight.slice().sort(() => R()-0.5).slice(0, Math.round(N/8)).forEach(s => {
     const cx = s.tx*T + (s.h ? 0 : 6.2), cz = s.tz*T + (s.h ? -6.2 : 0);
     W.cams.push({x:s.tx*T, z:s.tz*T, px:cx, pz:cz, h:s.h, last:-99});
   });
@@ -188,6 +214,8 @@ function buildTown(city, scene, opts) {
     W.spawn.h = bs.d[0] === 0 ? Math.PI/2 : 0;
   }
 
+  W.heightAt = (x, z) => { for (const a of W.approaches) { const s2 = apprS(a, x, z); if (s2 !== null) return apprH(s2); } return 0; };
+  W.apprAt = (x, z) => { for (const a of W.approaches) { const s2 = apprS(a, x, z); if (s2 !== null) return {a, s: s2}; } return null; };
   // --- surface & collisions
   W.surfaceAt = (x,z) => tileAt(Math.round(x/T), Math.round(z/T));
   W.collide = (px, pz, r) => {
@@ -229,7 +257,7 @@ function drawGround(W) {
     else if (t === BUILD) { x.fillStyle = KL ? '#b98a64' : '#c9a878'; x.fillRect(X,Z,s,s); }
     else if (t === WATER) { x.fillStyle = W.city.coast && !KL ? '#2a6f9a' : '#2e7280'; x.fillRect(X,Z,s,s); x.strokeStyle='rgba(255,255,255,.18)'; for(let i=0;i<4;i++){x.beginPath(); const yy=Z+R()*s; x.moveTo(X+R()*s*0.3,yy); x.lineTo(X+s*0.6+R()*s*0.4,yy); x.stroke();} }
     else if (t === PUMP) { x.fillStyle = '#8b8b8b'; x.fillRect(X,Z,s,s); }
-    else if (t === RAIL) { x.fillStyle = '#7a6f62'; x.fillRect(X,Z,s,s); x.fillStyle = '#5a4632'; for (let k = 0; k < s; k += 3) x.fillRect(X+k, Z+s/2-5, 1.6, 10); x.fillStyle = '#c9c9c9'; x.fillRect(X, Z+s/2-3.5, s, 1.2); x.fillRect(X, Z+s/2+2.3, s, 1.2); }
+    else if (t === RAIL) { x.fillStyle = '#7a6f62'; x.fillRect(X,Z,s,s); [-2.2,2.2].forEach(o => { const zc = Z + s/2 + o*S; x.fillStyle = '#5a4632'; for (let k = 0; k < s; k += 2.4) x.fillRect(X+k, zc-1.3*S, 1.2, 2.6*S); x.fillStyle = '#c9c9c9'; x.fillRect(X, zc-0.84*S, s, 1.1); x.fillRect(X, zc+0.72*S, s, 1.1); }); }
     else if (t === ROAD) {
       x.fillStyle = '#b5aea2'; x.fillRect(X,Z,s,s);
       const cx = X+s/2, cz = Z+s/2, rh = ROAD_HALF*S;
@@ -255,7 +283,7 @@ function drawGround(W) {
     }
   }
   // rails across level crossings
-  W.crossings.forEach(c => { const X = c.tx*T*S, Z = c.tz*T*S, s = T*S; x.fillStyle = '#d0d0d0'; x.fillRect(X, Z+s/2-3.5, s, 1.2); x.fillRect(X, Z+s/2+2.3, s, 1.2); x.fillStyle = '#f2f2f2'; x.fillRect(X+2, Z+s/2-9, s-4, 1.5); x.fillRect(X+2, Z+s/2+7.5, s-4, 1.5); });
+  W.crossings.forEach(c => { const X = c.tx*T*S, Z = c.tz*T*S, s = T*S; x.fillStyle = '#d0d0d0'; [-2.2,2.2].forEach(o => { const zc = Z + s/2 + o*S; x.fillRect(X, zc-0.84*S, s, 1.1); x.fillRect(X, zc+0.72*S, s, 1.1); }); x.fillStyle = '#f2f2f2'; x.fillRect(X+2, Z+s/2-4.6*S, s-4, 1.5); x.fillRect(X+2, Z+s/2+4.4*S, s-4, 1.5); });
   // zebra crossings at signals
   x.fillStyle = '#efefe6';
   W.signals.forEach(sg => {
@@ -310,6 +338,7 @@ function buildScenery(W, opts) {
   const byFloors = {1:[],2:[],3:[],4:[]};
   const roofs = [], slabs = [], awn = [];
   const poiTiles = new Set(W.pois.map(p => p.tx+','+p.tz));
+  if (W.station) [2,3].forEach(k => poiTiles.add((W.station.c+k)+','+W.station.tz));
   const trees = [];
   for (let tz = 0; tz < N; tz++) for (let tx = 0; tx < N; tx++) {
     const t = tileAt(tx,tz), cx = tx*T, cz = tz*T;
@@ -475,6 +504,7 @@ function buildScenery(W, opts) {
   W.pois.forEach(p => buildPOI(W, p));
   buildStreetLife(W, byFloors, poiTiles);
   buildRailways(W);
+  buildApproaches(W);
   // welcome arch near spawn
   buildArch(W);
   W.festDecor = new THREE.Group(); group.add(W.festDecor);
@@ -800,17 +830,52 @@ function makeTrainCar(len, body, stripe, h){
   addBox(g, 2.4, 0.5, len-0.6, mat(0x333333), 0, 0.35, 0);
   return g;
 }
+function makeGoodsWagon(len, col, kind){
+  const g = new THREE.Group();
+  if (kind === 0) { // covered wagon
+    addBox(g, 2.9, 3.0, len-0.6, mat(col), 0, 2.1, 0);
+    addBox(g, 2.95, 0.25, len-0.4, mat(0x3a3a3a), 0, 3.7, 0);
+  } else if (kind === 1) { // tanker
+    const tk = new THREE.Mesh(new THREE.CylinderGeometry(1.35,1.35,len-1.2,12), mat(col)); tk.rotation.x = Math.PI/2; tk.position.y = 2.2; g.add(tk);
+    addBox(g, 2.6, 0.4, len-0.6, mat(0x2b2b2b), 0, 0.85, 0);
+  } else { // open wagon with coal / stone
+    addBox(g, 2.9, 1.8, len-0.6, mat(col), 0, 1.5, 0);
+    addBox(g, 2.6, 0.5, len-1.0, mat(kind === 2 ? 0x1c1c1c : 0x9a948a), 0, 2.45, 0);
+  }
+  addBox(g, 2.4, 0.5, len-0.6, mat(0x333333), 0, 0.35, 0);
+  return g;
+}
+function makeGroundTrain(goods, KL, R){
+  const tg = new THREE.Group();
+  let len = 0;
+  const engCol = goods ? 0x8e3b20 : (R() < 0.5 ? 0x1f4e8c : 0xc0392b);
+  const eng = makeTrainCar(18, engCol, goods ? 0xf2c21b : 0xf4efe0, 3.4); eng.position.x = 0; tg.add(eng); len = 18;
+  const nC = goods ? 12 + Math.floor(R()*8) : 7 + Math.floor(R()*5);
+  const pas = [[0x8b2e2a,0xf4efe0],[0x1d4f91,0xe8e1c8],[0x2f6b3a,0xf2e6b8],[0x6c3483,0xf5f0e0]][Math.floor(R()*4)];
+  for (let i = 1; i <= nC; i++) {
+    const L = goods ? 14 : 20;
+    const c = goods ? makeGoodsWagon(L, [0x7b4a2f,0x3e5a6b,0x5b3b2b,0x6b6b5e][Math.floor(R()*4)], Math.floor(R()*4)) : makeTrainCar(20, pas[0], pas[1], 3.3);
+    c.position.x = -(len + L/2 + 0.5 - 9); tg.add(c); len += L + 0.5;
+  }
+  tg.children.forEach(c => c.rotation.y = Math.PI/2);
+  return {mesh: tg, len};
+}
 function buildRailways(W){
   const {N, group} = W;
   const dummy = new THREE.Object3D();
+  W.trains = []; W.metros = [];
   if (W.railRow !== undefined) {
-    const z = W.railRow*T;
-    // fences along the line (gaps at crossings)
+    const z = W.railRow*T, L = N*T, R = mulberry(hashStr(W.city.id+'rail'));
+    const st = W.station;
+    const atStation = x => st && x > st.x0 - 1 && x < st.x1 + 1;
+    // steel rails & sleepers (two tracks)
+    [-2.2, 2.2].forEach(o => [-0.78, 0.78].forEach(g2 => { const r = new THREE.Mesh(new THREE.BoxGeometry(L + 2*T, 0.16, 0.12), mat(0x9a9a9a)); r.position.set(L/2 - T/2, 0.1, z + o + g2); group.add(r); }));
+    // fences along the line (gaps at crossings and at the station)
     const fence = [];
-    for (let tx = 0; tx < N; tx++) { if (W.isCrossing(tx, W.railRow)) continue; [-1,1].forEach(sd => fence.push([tx*T, z + sd*(HALF-0.3)])); }
-    const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(T,1.1,0.12).translate(0,0.55,0), mat(0x8a8a8a), fence.length);
+    for (let tx = 0; tx < N; tx++) { if (W.isCrossing(tx, W.railRow) || atStation(tx*T)) continue; [-1,1].forEach(sd => fence.push([tx*T, z + sd*(HALF-0.3)])); }
+    const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(T,1.1,0.12).translate(0,0.55,0), mat(0x8a8a8a), Math.max(1, fence.length));
     fence.forEach((f,i) => { dummy.position.set(f[0],0,f[1]); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); fm.setMatrixAt(i,dummy.matrix); });
-    fm.frustumCulled = false; group.add(fm);
+    fm.count = fence.length; fm.frustumCulled = false; group.add(fm);
     // boom barriers & flashing lights at each crossing
     W.crossings.forEach(c => {
       const cx = c.tx*T; c.arms = []; c.lights = [];
@@ -826,34 +891,174 @@ function buildRailways(W){
         c.lights.push(lm);
       });
     });
-    // the train: engine + 8 coaches
-    const tg = new THREE.Group();
-    const eng = makeTrainCar(18, 0x1f4e8c, 0xf2c21b, 3.4); eng.position.x = 0; tg.add(eng);
-    for (let i = 1; i <= 8; i++) { const c = makeTrainCar(20, 0x8b2e2a, 0xf4efe0, 3.3); c.position.x = -i*20.5; tg.add(c); }
-    tg.children.forEach(c => c.rotation.y = Math.PI/2);
-    tg.position.set(-9999, 0, z); group.add(tg);
-    W.train = {mesh: tg, x: -9999, dir: 1, active: false, next: 8, len: 8*20.5 + 18, speed: 16, z};
+    // railway station: platforms both sides, shelters, name boards, station building
+    if (st) {
+      const len = st.x1 - st.x0, cx = (st.x0 + st.x1)/2;
+      const yel = W.KL ? 0xf1c40f : 0xf4d03f;
+      [-1,1].forEach(sd => {
+        const pz = z + sd*5.3;
+        addBox(group, len, 0.95, 2.8, mat(0xcfc6b4), cx, 0.475, pz);
+        addBox(group, len, 0.06, 0.3, mat(yel), cx, 0.98, z + sd*4.05);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(len*0.7, 0.25, 3.4), mat(0x7b241c)); roof.position.set(cx, 4.5, pz); group.add(roof);
+        for (let k = -3; k <= 3; k++) { const c2 = new THREE.Mesh(boxGeo(0.25, 3.6, 0.25), mat(0x555555)); c2.position.set(cx + k*len*0.1, 2.75, pz + sd*0.8); group.add(c2); }
+        for (let k = -2; k <= 2; k++) addBox(group, 2.2, 0.45, 0.6, mat(0x2e4053), cx + k*8 + 3, 1.2, pz + sd*0.9);
+        [-0.36, 0.36].forEach(f => {
+          const tex = makeSignTexture([W.city.en.toUpperCase(), W.city.nt, (typeof HINDI !== 'undefined' && HINDI[W.city.id]) || ''].filter(Boolean), '#f4d03f', '#111', 512, 220);
+          const b = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.4), new THREE.MeshBasicMaterial({map: tex, side: THREE.DoubleSide}));
+          b.position.set(cx + f*len, 3.0, pz + sd*0.2); group.add(b);
+          [-2.6, 2.6].forEach(lg => { const p2 = new THREE.Mesh(boxGeo(0.15, 3, 0.15), mat(0x333333)); p2.position.set(cx + f*len + lg, 1.5, pz + sd*0.2); group.add(p2); });
+        });
+      });
+      // footbridge
+      const fbX = cx + len*0.3;
+      addBox(group, 2.4, 0.35, 13, mat(0x9aa3ab), fbX, 6.4, z);
+      [-1,1].forEach(sd => { addBox(group, 2.4, 6.4, 2.4, mat(0x8e979f), fbX, 3.2, z + sd*7.6); addBox(group, 2.6, 1.0, 13, mat(0x6f7a83), fbX, 7.0, z).visible = sd > 0; });
+      // long station building on the station tiles
+      const bz = st.tz*T, bx = (st.c+2.5)*T;
+      addBox(group, 2*T - 2, 4.6, 8, mat(0x922b21), bx, 2.3, bz - 1);
+      addBox(group, 2*T - 1, 0.5, 9, mat(0xd5c9b1), bx, 4.85, bz - 1);
+      for (let k = 0; k < 6; k++) addBox(group, 2.2, 2.6, 0.1, mat(0xf4efe0), bx - 10 + k*4, 2.2, bz - 5.05);
+      const ntex = makeSignTexture([W.city.en + ' Railway Station', W.city.nt + ' ' + PLACE_TYPES.rail[W.city.st]], '#922b21', '#fff', 1024, 200);
+      const nb = new THREE.Mesh(new THREE.PlaneGeometry(14, 2.7), new THREE.MeshBasicMaterial({map: ntex, side: THREE.DoubleSide}));
+      nb.position.set(bx, 6.6, bz - 5.2); group.add(nb);
+    }
+    // trains: one track each way; passenger trains stop at the station, goods trains run through
+    [{o:-2.2, dir:1}, {o:2.2, dir:-1}].forEach((tk, i) => {
+      const goods = R() < 0.4;
+      const t = makeGroundTrain(goods, W.KL, R);
+      t.mesh.position.set(-9999, 0, z + tk.o); group.add(t.mesh);
+      W.trains.push({mesh: t.mesh, len: t.len, x: -9999, dir: tk.dir, z: z + tk.o, zc: z, active: false, next: 6 + i*22 + R()*10, speed: goods ? 12 : 18, v: goods ? 12 : 18, goods, wait: 0, stopped: false, track: tk.o});
+    });
+    W.train = W.trains[0];
   }
   if (W.metroRow !== undefined) {
     const z = W.metroRow*T, L = (N-1)*T, y = 9.5;
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(L + T, 1.3, 6.6), mat(0xbfb9ad)); deck.position.set(L/2, y, z); group.add(deck);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(L + T, 0.3, 0.2), mat(0x777777)); [-1.6,1.6].forEach(o => { const r2 = rail.clone(); r2.position.set(L/2, y+0.8, z+o); group.add(r2); });
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(L + T, 1.3, 7.6), mat(0xbfb9ad)); deck.position.set(L/2, y, z); group.add(deck);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(L + T, 0.3, 0.2), mat(0x777777)); [-2.5,-0.9,0.9,2.5].forEach(o => { const r2 = rail.clone(); r2.position.set(L/2, y+0.8, z+o); group.add(r2); });
     const pl = [];
     for (let tx = 1; tx < N-1; tx += 2) { if (W.isRoad(tx, W.metroRow) && !W.isInter(tx, W.metroRow)) { pl.push(tx*T); W.pillars.push({x: tx*T, z, r: 0.9}); } }
     const pm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.85,1.0,y-0.6,10).translate(0,(y-0.6)/2,0), mat(0xc9c3b6), Math.max(1,pl.length));
     pl.forEach((x,i) => { dummy.position.set(x,0,z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); pm.setMatrixAt(i,dummy.matrix); });
     pm.count = pl.length; pm.frustumCulled = false; group.add(pm);
-    const stations = [Math.round(L*0.3), Math.round(L*0.7)];
+    const ns = N >= 52 ? 4 : 3;
+    const stations = []; for (let k = 0; k < ns; k++) stations.push(Math.round(L*(0.15 + 0.7*k/(ns-1))));
     stations.forEach(sx => {
-      const plat = new THREE.Mesh(new THREE.BoxGeometry(34, 0.6, 11), mat(0xd8d2c4)); plat.position.set(sx, y+0.2, z); group.add(plat);
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(36, 0.4, 12), mat(0x2471a3)); roof.position.set(sx, y+5.4, z); group.add(roof);
-      [-16,0,16].forEach(o => [-5,5].forEach(w => { const c = new THREE.Mesh(boxGeo(0.4,5,0.4), mat(0x888888)); c.position.set(sx+o, y+2.9, z+w); group.add(c); }));
+      [-1,1].forEach(sd => { const plat = new THREE.Mesh(new THREE.BoxGeometry(64, 0.6, 3), mat(0xd8d2c4)); plat.position.set(sx, y+0.2, z + sd*5.3); group.add(plat); });
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(66, 0.4, 14), mat(0x2471a3)); roof.position.set(sx, y+5.4, z); group.add(roof);
+      [-30,-15,0,15,30].forEach(o => [-6.4,6.4].forEach(w => { const c = new THREE.Mesh(boxGeo(0.4,5,0.4), mat(0x888888)); c.position.set(sx+o, y+2.9, z+w); group.add(c); }));
       const tex = makeSignTexture(['METRO', W.KL ? 'മെട്രോ' : 'மெட்ரோ'], '#2471a3', '#fff', 512, 160);
       const sg = new THREE.Sprite(new THREE.SpriteMaterial({map: tex})); sg.scale.set(8, 2.5, 1); sg.position.set(sx, y+7.6, z); group.add(sg);
+      // stair towers down to the street
+      [-1,1].forEach(sd => addBox(group, 3, y, 3, mat(0xb8b2a6), sx + 20, y/2, z + sd*(HALF + 0.6)));
     });
-    const mg = new THREE.Group();
-    for (let i = 0; i < 3; i++) { const c = makeTrainCar(20, 0xf4f4f0, W.KL ? 0x0f8b8d : 0x1f8f3a, 3.2); c.rotation.y = Math.PI/2; c.position.x = -i*20.5; mg.add(c); }
-    mg.position.set(0, y + 0.65, z); group.add(mg);
-    W.metro = {mesh: mg, x: 40, dir: 1, v: 0, wait: 0, stations, len: 61, min: 40, max: L - 10};
+    [{o:-1.7, dir:1, x:40}, {o:1.7, dir:-1, x:L - 10}].forEach(tk => {
+      const mg = new THREE.Group();
+      for (let i = 0; i < 3; i++) { const c = makeTrainCar(20, 0xf4f4f0, W.KL ? 0x0f8b8d : 0x1f8f3a, 3.2); c.rotation.y = Math.PI/2; c.position.x = -i*20.5; mg.add(c); }
+      mg.position.set(0, y + 0.65, z + tk.o); group.add(mg);
+      W.metros.push({mesh: mg, x: tk.x, dir: tk.dir, v: 0, wait: tk.dir > 0 ? 0 : 12, stations, len: 61, min: 40, max: L - 10});
+    });
+    W.metro = W.metros[0];
   }
+}
+
+// ================= Highway approaches (town edge flyovers) =================
+const APPR_LEN = 120, APPR_H = 7;
+const DIRS = {N:{vx:0, vz:-1, en:'North'}, E:{vx:1, vz:0, en:'East'}, S:{vx:0, vz:1, en:'South'}, W:{vx:-1, vz:0, en:'West'}};
+function cityVec(a, b){ const vx = (b.lon - a.lon)*Math.cos(a.lat*Math.PI/180), vz = -(b.lat - a.lat); const d = Math.hypot(vx, vz) || 1; return {vx: vx/d, vz: vz/d}; }
+function cityKm(a, b){ const R=6371, dLat=(b.lat-a.lat)*Math.PI/180, dLon=(b.lon-a.lon)*Math.PI/180; const q=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(q)); }
+// nearest town in each compass direction
+function townNeighbours(city){
+  const out = {};
+  Object.keys(DIRS).forEach(k => {
+    const D = DIRS[k]; let best = null, bd = 1e9;
+    CITIES.forEach(c => { if (c === city) return; const v = cityVec(city, c); const cos = v.vx*D.vx + v.vz*D.vz; if (cos < 0.5) return; const km = cityKm(city, c); const score = km / (0.4 + cos); if (km < 380 && score < bd) { bd = score; best = c; } });
+    if (best) out[k] = best;
+  });
+  return out;
+}
+function townApproaches(city, N, rows, cols, maxRoad, waterRows){
+  const nb = townNeighbours(city), list = [];
+  const mr = rows[Math.floor(rows.length/2)], mc = cols[Math.floor(cols.length/2)];
+  const southBlocked = waterRows > 0 || maxRoad < N-1;
+  const want = Object.keys(nb).filter(k => !(k === 'S' && southBlocked)).map(k => ({k, c: nb[k], idx: k === 'E' || k === 'W' ? mr : mc}));
+  if (southBlocked && nb.S && !want.some(w => w.c === nb.S)) {
+    // the sea is to the south: send that road out of the east or west side instead, on a lower street
+    const v = cityVec(city, nb.S), side = v.vx >= 0 ? 'E' : 'W';
+    const r2 = rows[Math.max(1, Math.floor(rows.length*0.75) - 1)];
+    want.push({k: side, c: nb.S, idx: r2 === mr ? rows[Math.max(1, Math.floor(rows.length/2) - 1)] : r2});
+  }
+  want.forEach(({k, c: nc, idx}) => {
+    const D = DIRS[k], ax = D.vx ? 'x' : 'z', sgn = D.vx || D.vz;
+    const edge = sgn > 0 ? (N-1)*T + HALF : -HALF;
+    const a = {dir:k, ax, sgn, idx, line: idx*T, edge, to: nc, vx: D.vx, vz: D.vz, km: Math.round(cityKm(city, nc)*1.3)};
+    a.gate = ax === 'x' ? {x: (sgn > 0 ? N-1 : 0)*T, z: idx*T} : {x: idx*T, z: (sgn > 0 ? N-1 : 0)*T};
+    a.top = ax === 'x' ? {x: a.edge + sgn*(APPR_LEN-12), z: a.line} : {x: a.line, z: a.edge + sgn*(APPR_LEN-12)};
+    list.push(a);
+  });
+  return list;
+}
+function apprS(a, x, z){
+  const along = a.ax === 'x' ? x : z, across = a.ax === 'x' ? z : x;
+  const s = (along - a.edge)*a.sgn;
+  if (s < -1 || s > APPR_LEN + 10 || Math.abs(across - a.line) > HALF) return null;
+  return s;
+}
+function apprH(s){ if (s < 14) return 0; if (s > 74) return APPR_H; const t = (s - 14)/60; return APPR_H * t*t*(3 - 2*t); }
+function rampStrip(width, len, hf, xoff, material, segs, yAdd){
+  const pos = [], idx = [], uv = [];
+  for (let i = 0; i <= segs; i++) { const sz = len*i/segs, y = hf(sz) + (yAdd||0); pos.push(xoff - width/2, y, sz, xoff + width/2, y, sz); uv.push(0, sz/12, 1, sz/12); }
+  for (let i = 0; i < segs; i++) { const a = i*2; idx.push(a, a+2, a+1, a+1, a+2, a+3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  return new THREE.Mesh(g, material);
+}
+function rampWall(len, hf, x, top, material, segs){
+  const pos = [], idx = [];
+  for (let i = 0; i <= segs; i++) { const sz = len*i/segs; pos.push(x, 0, sz, x, hf(sz) + top, sz); }
+  for (let i = 0; i < segs; i++) { const a = i*2; idx.push(a, a+1, a+2, a+1, a+3, a+2); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  return new THREE.Mesh(g, material);
+}
+let RAMP_TEX = null;
+function rampTex(){
+  if (RAMP_TEX) return RAMP_TEX;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#47484d'; x.fillRect(0,0,128,256);
+  for (let i = 0; i < 300; i++) { x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,.15)' : 'rgba(255,255,255,.06)'; x.fillRect(Math.random()*128, Math.random()*256, 2, 2); }
+  x.fillStyle = '#f2f2f2'; x.fillRect(8, 0, 3, 256); x.fillRect(117, 0, 3, 256); x.fillRect(62, 0, 4, 128);
+  RAMP_TEX = new THREE.CanvasTexture(c); RAMP_TEX.wrapS = RAMP_TEX.wrapT = THREE.RepeatWrapping;
+  return RAMP_TEX;
+}
+function apprSignTex(a, W){
+  const hi = (typeof HINDI !== 'undefined' && HINDI[a.to.id]) || '';
+  const nh = typeof highwayNumber === 'function' ? highwayNumber(W.city, a.to) : 'NH';
+  return makeSignTexture([nh + '  →  ' + a.to.en + '  ' + a.km + ' km', a.to.nt + (hi ? '  ·  ' + hi : '')], '#0d6b3a', '#ffffff', 1024, 240);
+}
+function buildApproaches(W){
+  const road = new THREE.MeshLambertMaterial({map: rampTex()});
+  const wall = new THREE.MeshLambertMaterial({color: 0xc9c3b6, side: THREE.DoubleSide}), rail = mat(0xe8e4da);
+  W.approaches.forEach(a => {
+    const g = new THREE.Group();
+    g.position.set(a.ax === 'x' ? a.edge : a.line, 0, a.ax === 'x' ? a.line : a.edge);
+    g.rotation.y = Math.atan2(a.vx, a.vz);
+    const segs = 40, len = APPR_LEN + 10;
+    g.add(rampStrip(12, len, apprH, 0, road, segs, 0.06));
+    [-6.2, 6.2].forEach(x => g.add(rampWall(len, apprH, x, 1.0, wall, segs)));
+    // top railing
+    [-6.2, 6.2].forEach(x => g.add(rampStrip(0.35, len, apprH, x, rail, segs, 1.05)));
+    // pillars under the far end (the flyover continues out of town)
+    for (let s2 = APPR_LEN + 14; s2 < APPR_LEN + 120; s2 += 22) { const p = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.1, APPR_H, 10), mat(0xbdb6a8)); p.position.set(0, APPR_H/2, s2); g.add(p); }
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(13, 1.2, 110), mat(0xbfb9ad)); deck.position.set(0, APPR_H - 0.55, APPR_LEN + 10 + 55); g.add(deck);
+    // green direction sign gantry, facing traffic leaving town
+    const tex = apprSignTex(a, W);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(11, 2.6), new THREE.MeshBasicMaterial({map: tex, side: THREE.DoubleSide}));
+    board.position.set(0, 6.4, 8); board.rotation.y = Math.PI; g.add(board);
+    [-6.6, 6.6].forEach(x => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 7.6, 6), mat(0x9a9a9a)); p.position.set(x, 3.8, 8); g.add(p); });
+    const bm = new THREE.Mesh(new THREE.BoxGeometry(13.6, 0.4, 0.4), mat(0x9a9a9a)); bm.position.set(0, 7.7, 8.1); g.add(bm);
+    // small sign at the top: "Welcome back" for arriving traffic
+    const wtex = makeSignTexture([W.city.en, W.city.nt], '#0d6b3a', '#fff', 512, 200);
+    const wb = new THREE.Mesh(new THREE.PlaneGeometry(5, 2), new THREE.MeshBasicMaterial({map: wtex}));
+    wb.position.set(-4, APPR_H + 3.4, APPR_LEN - 30); g.add(wb);
+    const wp = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.4, 5), mat(0x888888)); wp.position.set(-4, APPR_H + 1.7, APPR_LEN - 29.9); g.add(wp);
+    W.group.add(g);
+  });
 }

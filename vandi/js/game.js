@@ -139,16 +139,17 @@ function restoreInterRider(r){
     phoneNote(r.name + ': drop me at the ' + W.city.en + ' bus stand');
   }
 }
-function loadCity(id, keepPos){
+function loadCity(id, keepPos, enter){
   const keepR = keepInterRider();
   disposeTown();
   const city = cityById(id);
   S.city = city.id;
   if (!S.stats.cities.includes(city.id)) S.stats.cities.push(city.id);
   W = buildTown(city, scene, {aniso: renderer.capabilities.getMaxAnisotropy()});
-  const sp = (keepPos && S.pos) ? S.pos : W.spawn;
+  let sp = (keepPos && S.pos) ? S.pos : W.spawn;
+  if (enter) { const a = approachToward(enter); if (a) sp = {x: a.top.x - a.vx*6, z: a.top.z - a.vz*6, h: Math.atan2(-a.vx, -a.vz)}; }
   spawnPlayer(S.active, sp.x, sp.z, sp.h);
-  if (W.collide(P.x, P.z, 1.2).hit) { P.x = W.spawn.x; P.z = W.spawn.z; P.h = W.spawn.h; }
+  if (!enter && W.collide(P.x, P.z, 1.2).hit) { P.x = W.spawn.x; P.z = W.spawn.z; P.h = W.spawn.h; }
   spawnTraffic(); spawnPeds(); spawnAnimals();
   enableShadows();
   setupDay(); BANNER.t = 8;
@@ -185,7 +186,8 @@ function spawnPlayer(id, x, z, h){
   scene.add(mesh);
   const nCirc = def.len > 6 ? 5 : def.len > 3.5 ? 3 : 2;
   const offs = []; for (let i = 0; i < nCirc; i++) offs.push(lerp(-def.len/2 + def.wid/2, def.len/2 - def.wid/2, nCirc===1?0.5:i/(nCirc-1)));
-  P = {def, mesh, x, z, h: h||0, v:0, vx:0, vz:0, steer:0, offs, r: def.wid/2 + 0.05, tile:null, bumpCD:0, stopT:0};
+  P = {def, mesh, x, z, h: h||0, v:0, vx:0, vz:0, steer:0, offs, r: def.wid/2 + 0.05, tile:null, bumpCD:0, stopT:0, y: (W && W.heightAt) ? W.heightAt(x, z) : 0};
+  mesh.rotation.order = 'YXZ';
   // passenger dummy in back seat of autos
   if (kind === 'auto') { const pp = makePerson(); pp.scale.setScalar(0.8); pp.position.set(0,0.75,-0.75); pp.visible = false; mesh.add(pp); P.paxMesh = pp; }
   if (S.damage > 0) { const sides = ['front','rear']; const n = Math.floor(S.damage/25); for (let i = 0; i < n; i++) breakParts(mesh, sides[i%2], 1, scene, DEBRIS, {x:0,z:0}); }
@@ -219,7 +221,7 @@ const NPC_TYPES = [
 ];
 const NPC_COLORS = [[0xd0d3d4,0x222222],[0x7b241c,0x222],[0x1a5276,0x111],[0xf4f4f0,0x333],[0x145a32,0x111],[0x6e2c00,0x222],[0x34495e,0x111]];
 const TRAFFIC_LEVELS = {light:{k:0.6, label:'Light'}, normal:{k:1, label:'Normal'}, heavy:{k:1.7, label:'Heavy'}, rush:{k:2.5, label:'Rush hour'}};
-function trafficCount(){ if (W.highway) return Math.round(30 * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); return Math.round((W.city.big ? 26 : 18) * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); }
+function trafficCount(){ if (W.highway) return Math.round(30 * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); return Math.round(Math.max(14, W.N*W.N/80) * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); }
 function respawnTraffic(){ NPCS.forEach(n => { scene.remove(n.mesh); if (n.out) scene.remove(n.out.mesh); }); NPCS = []; spawnTraffic(); }
 function spawnTraffic(){
   const count = trafficCount();
@@ -325,19 +327,53 @@ function updateTraffic(dt){
 }
 
 // ============ Highway trips ============
-function startHighway(toId){
+// ---------- seamless highway travel ----------
+function fadeThen(fn){
+  const f = $('fade'); f.classList.add('on');
+  setTimeout(() => { try { fn(); } finally { setTimeout(() => f.classList.remove('on'), 120); } }, 260);
+}
+function navCity(){
+  if (RIDER && RIDER.inter && RIDER.destCity && W && W.city.id !== RIDER.destCity.id) return RIDER.destCity;
+  if (S.navDest && W && S.navDest !== W.city.id) return cityById(S.navDest);
+  return null;
+}
+// the town approach whose direction best fits a far-away city
+function approachToward(c){
+  if (!W || !W.approaches || !W.approaches.length) return null;
+  const direct = W.approaches.find(a => a.to.id === c.id); if (direct) return direct;
+  const v = cityVec(W.city, c);
+  return W.approaches.reduce((b, a) => (a.vx*v.vx + a.vz*v.vz) > (b.vx*v.vx + b.vz*v.vz) ? a : b);
+}
+let RAMP_BUSY = false;
+function checkRamp(){
+  if (RAMP_BUSY || !W || onFoot) return;
+  if (W.highway) {
+    if (P.z > W.len - 25) { RAMP_BUSY = true; const to = W.to; fadeThen(() => { arriveFromHighway(to); RAMP_BUSY = false; }); }
+    return;
+  }
+  const hit = W.apprAt && W.apprAt(P.x, P.z);
+  if (!hit || hit.s < APPR_LEN - 8) return;
+  // drove up the flyover and out of town
+  const nc = navCity(), a = hit.a;
+  const dest = nc && approachToward(nc) === a ? nc : a.to;
+  RAMP_BUSY = true;
+  const sp = Math.abs(P.v);
+  fadeThen(() => { startHighway(dest.id, sp); RAMP_BUSY = false; });
+}
+function startHighway(toId, keepSpeed){
   const from = W && W.highway ? W.city : cityById(S.city), to = cityById(toId);
   const keepR = keepInterRider();
   clearJob();
   disposeTown(); if (P) scene.remove(P.mesh);
   W = buildHighway(from, to, scene, {});
   spawnPlayer(S.active, W.spawn.x, W.spawn.z, W.spawn.h);
+  if (keepSpeed) { P.v = keepSpeed; P.vx = 0; P.vz = keepSpeed; }
   spawnTraffic(); enableShadows(); festToday = null; BANNER.t = 0;
   restoreInterRider(keepR);
   radioCityChanged();
   updateCamera(0, true);
   toast('🛣 ' + W.nh + ' to ' + to.en + ' · ' + W.realKm + ' km', 'good');
-  phoneNote('Drive safe! Highway limit is 100 km/h.');
+  phoneNote('Drive safe! Highway limit is 100 km/h. Toll plaza ahead.');
   persist();
 }
 function updateHighway(dt){
@@ -352,60 +388,78 @@ function updateHighway(dt){
     toast('📍 Entering ' + zone.c.dist + ' district' + (zone.c.st !== prevSt ? ' · Welcome to ' + STATE_NAME[zone.c.st].en : ''), 'info');
     radioCityChanged();
   }
-  if (!onFoot && P.z > W.len - 25) { arriveFromHighway(W.to); return; }
+  if (typeof updateTolls === 'function') updateTolls(dt);
 }
 function arriveFromHighway(c){
-  const km = W.realKm; S.stats.km += 0; S.pos = null;
-  loadCity(c.id, false); updateCamera(0, true);
-  toast('Welcome to ' + c.en + ' · ' + c.nt, 'good'); persist();
+  const from = W.highway ? W.from : null, sp = Math.abs(P.v);
+  S.pos = null;
+  loadCity(c.id, false, from || c);
+  if (from) { P.v = Math.min(sp, 14); const f = fwd(P.h); P.vx = f.x*P.v; P.vz = f.z*P.v; }
+  updateCamera(0, true);
+  if (S.navDest === c.id) { S.navDest = null; toast('🏁 You made it to ' + c.en + '!', 'good'); }
+  else toast('Welcome to ' + c.en + ' · ' + c.nt, 'good');
+  persist();
 }
 function nearExit(){ if (!W || !W.highway || onFoot) return null; return W.exits.find(e => P.x > 6.5 && P.z > e.z - 75 && P.z < e.z + 25) || null; }
 
 // ============ Trains ============
 function crossingClosed(c){ return c.closed; }
+function trainSpan(tr){ const head = tr.x, tail = tr.x - tr.dir*tr.len; return [Math.min(head, tail), Math.max(head, tail)]; }
 function updateTrains(dt){
-  if (!W) return;
-  const tr = W.train;
-  if (tr) {
-    if (!tr.active) { tr.next -= dt; if (tr.next <= 0) { tr.active = true; tr.x = tr.dir > 0 ? -300 : W.N*T + 300; tr.horned = false; } }
+  if (!W || !W.trains) return;
+  const st = W.station, M = me(), Lx = W.N*T;
+  for (const tr of W.trains) {
+    if (!tr.active) { tr.next -= dt; if (tr.next <= 0) { tr.active = true; tr.x = tr.dir > 0 ? -300 : Lx + 300; tr.horned = false; tr.stopped = false; tr.v = tr.speed; } }
     else {
-      tr.x += tr.dir * tr.speed * dt;
-      if ((tr.dir > 0 && tr.x - tr.len > W.N*T + 300) || (tr.dir < 0 && tr.x + tr.len < -300)) { tr.active = false; tr.next = rnd(35, 70); tr.dir *= -1; tr.x = -9999; }
+      // passenger trains brake for the station so the train is centred on the platform
+      if (st && !tr.goods && !tr.stopped) {
+        const stopX = st.x + tr.dir*tr.len/2;
+        const d = (stopX - tr.x)*tr.dir;
+        if (d > 0 && d < 120) tr.v = Math.max(1.2, Math.min(tr.speed, Math.sqrt(2*0.9*d)));
+        if (d <= 0.5 && d > -5) { tr.stopped = true; tr.wait = rnd(9, 14); tr.v = 0; tone(880, 0.25, 'sine', 0.03); }
+      }
+      if (tr.wait > 0) { tr.wait -= dt; tr.v = 0; if (tr.wait <= 0) { tr.v = 0.5; if (Math.abs(st.x - M.x) < 200) trainHorn(0.5); } }
+      else if (tr.stopped) tr.v = Math.min(tr.speed, tr.v + 1.4*dt);
+      tr.x += tr.dir * tr.v * dt;
+      if ((tr.dir > 0 && tr.x - tr.len > Lx + 300) || (tr.dir < 0 && tr.x + tr.len < -300)) {
+        tr.active = false; tr.next = rnd(30, 75); tr.x = -9999;
+        // next service on this track may be a different train
+        const goods = Math.random() < 0.4;
+        if (goods !== tr.goods) { W.group.remove(tr.mesh); const t = makeGroundTrain(goods, W.KL, Math.random); t.mesh.position.set(-9999, 0, tr.z); W.group.add(t.mesh); tr.mesh = t.mesh; tr.len = t.len; tr.goods = goods; tr.speed = goods ? 12 : 18; }
+      }
       tr.mesh.position.x = tr.x; tr.mesh.rotation.y = tr.dir > 0 ? 0 : Math.PI;
-      const M = me();
       if (!tr.horned && Math.abs(tr.x - M.x) < 320 && Math.abs(tr.z - M.z) < 250) { tr.horned = true; trainHorn(clamp(1 - Math.abs(tr.x - M.x)/400, 0.3, 1)); }
     }
-    // tail/head extents (the train extends behind the engine)
-    const head = tr.x, tail = tr.x - tr.dir*tr.len;
-    const lo = Math.min(head, tail), hi = Math.max(head, tail);
-    W.crossings.forEach(c => {
-      const cx = c.tx*T;
-      const coming = tr.active && ((tr.dir > 0 && head > cx - 170 && tail < cx + 12) || (tr.dir < 0 && head < cx + 170 && tail > cx - 12));
-      c.closed = coming;
-      const target = coming ? 0 : Math.PI/2*0.95;
-      c.ang += clamp(target - c.ang, -dt*1.2, dt*1.2);
-      c.arms.forEach(a => a.pivot.rotation.z = a.sd * c.ang);
-      const blink = Math.floor(simT*3) % 2;
-      c.lights.forEach((m,i) => m.color.setHex(coming && (blink ^ i) ? 0xff2020 : 0x330000));
-      if (coming && Math.hypot(cx - me().x, tr.z - me().z) < 60 && Math.random() < dt*2) tone(1500, 0.08, 'triangle', 0.05);
-    });
     // train hits you
-    if (tr.active && !onFoot && Math.abs(P.z - tr.z) < 3.4 && P.x > lo - 2 && P.x < hi + 2 && P.bumpCD <= 0) {
-      P.bumpCD = 2; crashFx(25); breakParts(P.mesh, 'front', 3, scene, DEBRIS, {x:0, z: Math.sign(P.z - tr.z)*8}); breakParts(P.mesh, 'rear', 2, scene, DEBRIS, {x:0,z:0});
-      S.damage = clamp(S.damage + 45, 0, 100); P.z = tr.z + Math.sign(P.z - tr.z || 1)*6; P.v = 0; P.vx = P.vz = 0;
+    const [lo, hi] = trainSpan(tr);
+    if (tr.active && !onFoot && Math.abs(P.z - tr.z) < 2.6 && P.x > lo - 2 && P.x < hi + 2 && P.bumpCD <= 0) {
+      P.bumpCD = 2; crashFx(25); breakParts(P.mesh, 'front', 3, scene, DEBRIS, {x:0, z: Math.sign(P.z - tr.zc)*8}); breakParts(P.mesh, 'rear', 2, scene, DEBRIS, {x:0,z:0});
+      S.damage = clamp(S.damage + 45, 0, 100); P.z = tr.zc + Math.sign(P.z - tr.zc || 1)*7; P.v = 0; P.vx = P.vz = 0;
       toast('🚆 Hit by a train! Never cross when the gates are down.', 'bad');
+      riderShout('crash');
       const by = PEDS.find(pd => Math.hypot(pd.x-P.x, pd.z-P.z) < 40); if (by) { by._saidT = 0; speak(by, 'angry'); }
     }
   }
-  const mt = W.metro;
-  if (mt) {
+  // level crossings close when any train is near
+  W.crossings.forEach(c => {
+    const cx = c.tx*T;
+    const coming = W.trains.some(tr => { if (!tr.active) return false; const head = tr.x, tail = tr.x - tr.dir*tr.len; return (tr.dir > 0 && head > cx - 170 && tail < cx + 12) || (tr.dir < 0 && head < cx + 170 && tail > cx - 12); });
+    c.closed = coming;
+    const target = coming ? 0 : Math.PI/2*0.95;
+    c.ang += clamp(target - c.ang, -dt*1.2, dt*1.2);
+    c.arms.forEach(a => a.pivot.rotation.z = a.sd * c.ang);
+    const blink = Math.floor(simT*3) % 2;
+    c.lights.forEach((m,i) => m.color.setHex(coming && (blink ^ i) ? 0xff2020 : 0x330000));
+    if (coming && Math.hypot(cx - M.x, W.railRow*T - M.z) < 60 && Math.random() < dt*2) tone(1500, 0.08, 'triangle', 0.05);
+  });
+  for (const mt of (W.metros || [])) {
     if (mt.wait > 0) { mt.wait -= dt; mt.v = 0; }
     else {
-      const st = mt.stations.find(sx => (sx - mt.x)*mt.dir > 0 && (sx - mt.x)*mt.dir < 40);
-      const targetV = st !== undefined ? Math.max(2, Math.abs(st - mt.x)*0.6) : 18;
+      const st2 = mt.stations.find(sx => (sx - mt.x)*mt.dir > 0 && (sx - mt.x)*mt.dir < 40);
+      const targetV = st2 !== undefined ? Math.max(2, Math.abs(st2 - mt.x)*0.6) : 18;
       mt.v += clamp(targetV - mt.v, -8*dt, 4*dt);
       mt.x += mt.dir * mt.v * dt;
-      if (st !== undefined && Math.abs(st - mt.x) < 0.8) { mt.x = st + mt.dir*0.9; mt.wait = 7; }
+      if (st2 !== undefined && Math.abs(st2 - mt.x) < 0.8) { mt.x = st2 + mt.dir*0.9; mt.wait = 7; }
       if (mt.x > mt.max) { mt.dir = -1; mt.x = mt.max; mt.wait = 3; } else if (mt.x < mt.min) { mt.dir = 1; mt.x = mt.min; mt.wait = 3; }
     }
     mt.mesh.position.x = mt.x + (mt.dir > 0 ? 0 : -mt.len + 20); mt.mesh.rotation.y = mt.dir > 0 ? 0 : Math.PI;
@@ -416,7 +470,7 @@ function trainHorn(v){ if (!AU.ctx) return; [0, 0.9].forEach(d => { tone(311, 0.
 // ============ Pedestrians & animals ============
 function spawnPeds(){
   if (!W.straight.length) return;
-  const count = (W.city.big ? 34 : 24) * (S.settings.gfx === 'high' ? 1 : 0.7);
+  const count = Math.max(20, W.N*W.N/62) * (S.settings.gfx === 'high' ? 1 : 0.7);
   for (let i = 0; i < count; i++) {
     const s = pick(W.straight);
     const side = Math.random() < 0.5 ? -1 : 1;
@@ -547,7 +601,10 @@ function updatePolice(dt){
     if (d > 260 && W.straight.length) { // teleport closer, out of sight
       const s = pick(W.straight); const x = s.tx*T, z = s.tz*T; if (Math.hypot(x-M.x,z-M.z) > 70 && Math.hypot(x-M.x,z-M.z) < 150) { c.x = x; c.z = z; }
     }
-    c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.h;
+    c.y = W.heightAt ? W.heightAt(c.x, c.z) : 0;
+    c.mesh.position.set(c.x, c.y, c.z); c.mesh.rotation.y = c.h;
+    // at 3+ stars the police open fire at your vehicle (never at people on foot)
+    if (wanted >= 3 && !onFoot && !INTERIOR && d < 45 && d > 4) { c.fireT = (c.fireT ?? rnd(0.5, 1.5)) - dt; if (c.fireT <= 0) { c.fireT = rnd(0.6, 1.2); policeShoot(c); } }
     const blink = Math.floor(simT*6)%2;
     c.mesh.userData.siren[0].material.color.setHex(blink ? 0xff2020 : 0x330000);
     c.mesh.userData.siren[1].material.color.setHex(blink ? 0x110033 : 0x2050ff);
@@ -566,14 +623,14 @@ function updatePolice(dt){
     for (let i = POLICE.length-1; i >= 0; i--) { const c = POLICE[i]; if (Math.hypot(M.x-c.x, M.z-c.z) > 60 || c.v < 0.2) { scene.remove(c.mesh); POLICE.splice(i,1); } }
   }
 }
-function busted(){
+function busted(why){
   const fine = 500 * Math.max(1, wanted);
   S.money -= fine; S.stats.fines += fine; S.stats.busts++; S.today.fines += fine;
   wanted = 0; bustTimer = 0;
   POLICE.forEach(c => scene.remove(c.mesh)); POLICE = [];
   if (RIDER) { toast(RIDER.name + ' got out.', 'info'); endRide(false); }
   P.v = 0; P.vx = P.vz = 0; if (onFoot) FOOT.v = 0;
-  showModal('<h2>🚔 Busted!</h2><p>The police caught you. You paid a fine of <b>' + money(fine) + '</b>.</p><p class="small">Tip: faster cars from the showroom make escapes easier.</p>', [{t:'Back on the road', f:closeModal}]);
+  showModal('<h2>🚔 Busted!</h2>' + (why ? '<p>' + why + '</p>' : '') + '<p>The police caught you. You paid a fine of <b>' + money(fine) + '</b>.</p><p class="small">Tip: faster cars from the showroom make escapes easier.</p>', [{t:'Back on the road', f:closeModal}]);
   persist();
 }
 
@@ -605,6 +662,7 @@ function vehicleVsPlayer(o, isPolice){
         breakParts(o.mesh, oSide, nParts, scene, DEBRIS, {x:px*2, z:pz*2});
         S.damage = clamp(S.damage + rel*2, 0, 100);
         if (RIDER) RIDER.comfort -= 20;
+        if (rel > 4) setTimeout(() => riderShout('crash'), 700);
         if (!isPolice) { if (rel > 5) driverOut(o); else speak(o, 'angry', vehH(o)); }
         if (isPolice) addWanted(1, 'Rammed a police car');
         else if (rel > 6) { const cost = Math.round(rel*8); S.money -= cost; toast('Crash! Other driver wants ' + money(cost) + ' for repairs', 'bad'); }
@@ -735,7 +793,7 @@ function updateJobs(dt){
           const line = pick(LINES.pick[W.city.st]);
           bubble(w.name, line[1].replace('{d}', w.destCity.nt), line[0].replace('{d}', w.destCity.en));
           if (P.paxMesh) P.paxMesh.visible = true; destBeam.visible = false;
-          toast('🛣 Tap "Start trip" or use the map to take the highway to ' + w.destCity.en, 'info');
+          toast('🛣 Follow the GPS to the highway flyover for ' + w.destCity.en, 'info');
           ding(2);
         } else if (spd < 2.8) { // board
           RIDER = {name:w.name, dest:w.dest, hurry:w.hurry, start:simT, metered:0, comfort:100, rating:w.rating, pay:w.pay, startMin:S.min,
@@ -907,6 +965,7 @@ function stepPlayer(dt){
       breakParts(P.mesh, P.v > 0 ? 'front' : 'rear', n, scene, DEBRIS, {x:-P.vx*0.2, z:-P.vz*0.2});
       S.damage = clamp(S.damage + sp*1.5, 0, 100);
       if (RIDER) RIDER.comfort -= 15;
+      if (sp > 7) riderShout('crash');
     }
     P.v *= 0.4; P.vx *= 0.4; P.vz *= 0.4;
   }
@@ -966,20 +1025,24 @@ function stepPlayer(dt){
   const tx = Math.round(P.x/T), tz = Math.round(P.z/T), key = tx+','+tz;
   if (P.tile && P.tile.key !== key && W.sigSet.has(key) && sp > 2) {
     const axis = P.tile.tx !== tx ? 'EW' : 'NS';
-    if (lightState(tx, tz, axis) === 'R') addWanted(1, 'Jumped a red light');
+    if (lightState(tx, tz, axis) === 'R') { addWanted(1, 'Jumped a red light'); riderShout('red'); }
   }
   if (P.tile && P.tile.key !== key && W.isCrossing && W.isCrossing(tx, tz) && sp > 2) { const c = W.crossings.find(c => c.tx === tx); if (c && c.closed) addWanted(1, 'Crossed a closed level crossing'); }
   P.tile = {tx, tz, key};
   const kmh = sp*3.6;
   for (const c of W.cams) {
     if (Math.hypot(c.x-P.x, c.z-P.z) < 13 && kmh > speedLimit() + 4 && simT - c.last > 8) {
-      c.last = simT; flash(); addWanted(1, 'Speed camera: ' + Math.round(kmh) + ' km/h in a ' + speedLimit() + ' zone');
+      c.last = simT; flash(); addWanted(1, 'Speed camera: ' + Math.round(kmh) + ' km/h in a ' + speedLimit() + ' zone'); riderShout('speed');
     }
   }
   S.stats.km += sp*dt/1000*DIST_SCALE;
   // visuals
-  P.mesh.position.set(P.x, 0, P.z);
+  const gh = W.heightAt ? W.heightAt(P.x, P.z) : 0;
+  P.y += (gh - P.y) * Math.min(1, dt*12);
+  P.mesh.position.set(P.x, P.y, P.z);
   P.mesh.rotation.y = P.h;
+  if (W.heightAt) { const ff = fwd(P.h); P.mesh.rotation.x = -Math.atan((W.heightAt(P.x + ff.x*1.5, P.z + ff.z*1.5) - W.heightAt(P.x - ff.x*1.5, P.z - ff.z*1.5))/3); }
+  checkRamp();
   P.mesh.rotation.z = clamp(-yaw*sp*0.012, -0.12, 0.12);
   P.mesh.userData.wheels.forEach(w => w.rotation.x += P.v*dt*3);
 }
@@ -987,6 +1050,7 @@ function stepPlayer(dt){
 // ============ On foot ============
 function getOut(){
   if (onFoot || Math.abs(P.v) > 1.5) return;
+  if ((P.y || 0) > 0.6) { toast('Not up here on the flyover!', 'bad'); return; }
   const f = fwd(P.h);
   // step out on the left side
   let x = P.x - f.z*(P.def.wid/2+0.8), z = P.z + f.x*(P.def.wid/2+0.8);
@@ -1128,6 +1192,7 @@ function updateCamera(dt, snap){
       if (tt === BUILD && qy < 12 && Math.abs(qx-cx) < HALF-1 && Math.abs(qz-cz) < HALF-1) break; last = t; }
     if (last < 1) { tp.set(lerp(sx, tp.x, last*0.9), Math.max(lerp(1.5, tp.y, last), 2.2 + (1-last)*4), lerp(sz, tp.z, last*0.9)); }
   }
+  { const py = P.y || 0; tp.y += py; tl.y += py; }
   if (snap || mode === 'cab') { camPos.copy(tp); camLook.copy(tl); }
   else { camPos.lerp(tp, 1 - Math.exp(-dt*5)); camLook.lerp(tl, 1 - Math.exp(-dt*8)); }
   camera.position.copy(camPos); camera.lookAt(camLook);
@@ -1356,7 +1421,7 @@ function renderPhone(){
     else if (RIDER && RIDER.inter && !RIDER.dest.stop) {
       h = '<div class="rq"><div class="av" style="background:#8e44ad">' + RIDER.name[0] + '</div><div><span class="pill trip">ON TRIP</span><div class="nm">' + escapeHtml(RIDER.name) + '</div><div class="meta">' + RIDER.rating + ' ★ · ' + RIDER.pay + '</div></div><div class="dist"><b>' + RIDER.km + '</b><small>km trip</small></div></div>' +
         '<div class="stat"><b>Going to ' + escapeHtml(RIDER.destCity.en) + '</b><span>' + escapeHtml(RIDER.destCity.nt) + '</span></div>' +
-        '<div class="stat"><span>' + (W.highway ? 'Stay on the highway. You\'ll drop them at the bus stand when you arrive.' : 'Tap "Start trip" (when stopped) or open the 🗺 map → Drive on the highway.') + '</span></div>';
+        '<div class="stat"><span>' + (W.highway ? 'Stay on the highway. You\'ll drop them at the bus stand when you arrive.' : 'Follow the GPS line to the highway flyover at the edge of town and drive up it.') + '</span></div>';
       mini = '🧳 ' + RIDER.name + ' → ' + RIDER.destCity.en;
     }
     else if (RIDER) {
@@ -1417,8 +1482,7 @@ function updateAction(){
     fb.textContent = '🚗'; fb.title = 'Get in (F)'; fb.classList.toggle('hidden', !nearOwnVehicle());
   } else {
     const ex = nearExit();
-    if (RIDER && RIDER.inter && !W.highway && W.city.id !== RIDER.destCity.id && Math.abs(P.v) < 2.5) ACTION = {label:'🛣 Start trip to ' + RIDER.destCity.en, f:() => startHighway(RIDER.destCity.id)};
-    else if (ex) ACTION = {label:'↖ Exit to ' + ex.c.en, f:() => arriveFromHighway(ex.c)};
+    if (ex) ACTION = {label:'↖ Exit to ' + ex.c.en, f:() => fadeThen(() => arriveFromHighway(ex.c))};
     else if (Math.abs(P.v) < 2.5 && !wanted) {
       const sh = nearPOI(SHOP_TYPES, 11), pt = nearPOI(['petrol'], 12), holy = nearPOI(['temple','church','mosque','museum'], 10), rto = nearPOI(['rto'], 11), tea = nearPOI(['tea'], 10);
       if (sh) ACTION = {label:'Enter ' + PLACE_TYPES[sh.type].en, f:() => openShowroom(PLACE_TYPES[sh.type].shop)};
@@ -1447,6 +1511,7 @@ function drawGPS(){
     x.font = '700 17px "Baloo Chettan 2",sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle';
     W.exits.forEach(e => { const [, sy] = toS(0, e.z); if (sy < -20 || sy > w+20) return; x.fillStyle = '#0d6b3a'; x.fillRect(c + 9*k*0.8, sy - 4, 40, 8); x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText('EXIT ' + e.c.en, c + 18, sy - 14); x.fillStyle = '#fff'; x.fillText('EXIT ' + e.c.en, c + 18, sy - 14); });
     W.pois.forEach(p => { const [, sy] = toS(0, p.z); if (sy < -10 || sy > w+10) return; x.fillStyle = '#d35400'; x.beginPath(); x.arc(c + 22*k*0.8, sy, 8, 0, 7); x.fill(); x.fillStyle = '#fff'; x.fillText('⛽', c + 22*k*0.8 - 8, sy); });
+    (W.tolls || []).forEach(tl => { const [, sy] = toS(0, tl.z); if (sy < -10 || sy > w + 10) return; x.fillStyle = '#ffd400'; x.fillRect(c - 10.6*k*0.8, sy - 3, 21.2*k*0.8, 6); x.fillStyle = '#fff'; x.textAlign = 'center'; x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText(tl.border ? 'CHECK POST' : 'TOLL', c - 40, sy - 12); x.fillText(tl.border ? 'CHECK POST' : 'TOLL', c - 40, sy - 12); x.textAlign = 'left'; });
     if (W.border) { const [, sy] = toS(0, W.border.z); if (sy > 0 && sy < w) { x.strokeStyle = '#ffd400'; x.setLineDash([10,8]); x.lineWidth = 4; x.beginPath(); x.moveTo(0, sy); x.lineTo(w, sy); x.stroke(); x.setLineDash([]); x.fillStyle = '#ffd400'; x.textAlign = 'center'; x.fillText(STATE_NAME[W.border.st].en.toUpperCase(), c, sy - 14); x.textAlign = 'left'; } }
     POLICE.forEach(p => { const [sx, sy] = toS(p.x, p.z); x.fillStyle = Math.floor(simT*4)%2 ? '#ff3b30' : '#0a84ff'; x.beginPath(); x.arc(sx, sy, 7, 0, 7); x.fill(); });
     x.save(); x.translate(c + P.x*k*0.8, c); x.fillStyle = '#ffd15c'; x.strokeStyle = '#3a2a00'; x.lineWidth = 3; x.beginPath(); x.moveTo(0,-20); x.lineTo(13,14); x.lineTo(0,7); x.lineTo(-13,14); x.closePath(); x.fill(); x.stroke(); x.restore();
@@ -1460,6 +1525,10 @@ function drawGPS(){
   const toS = (px, pz) => [c + (px - M.x)*k, c + (pz - M.z)*k];
   const [mx0, my0] = toS(-HALF, -HALF);
   x.globalAlpha = 0.95; x.drawImage(W.miniCanvas, mx0, my0, W.N*T*k, W.N*T*k); x.globalAlpha = 1;
+  (W.approaches || []).forEach(ap => { const [x0, y0] = toS(ap.gate.x, ap.gate.z), [x1, y1] = toS(ap.top.x + ap.vx*30, ap.top.z + ap.vz*30);
+    x.strokeStyle = '#2f8f4e'; x.lineWidth = 12*k*1.6 + 6; x.lineCap = 'butt'; x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke();
+    x.strokeStyle = '#45464b'; x.lineWidth = 12*k*1.6; x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke();
+    const [lx, ly] = toS(ap.top.x, ap.top.z); if (Math.hypot(lx - c, ly - c) < R - 16) { x.font = '700 15px "Baloo Chettan 2",sans-serif'; x.textAlign = 'center'; x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText('🛣 ' + ap.to.en, lx, ly - 14); x.fillStyle = '#7dffb0'; x.fillText('🛣 ' + ap.to.en, lx, ly - 14); } });
   // route line
   if (ROUTE) {
     const col = RIDER ? '#19c3b8' : BUS ? '#3c8dff' : (WAITING[0] && WAITING[0].inter) ? '#bf5af2' : '#ff9f1c';
@@ -1509,6 +1578,13 @@ function reactLang(){
   if (l === 'auto') return KLs ? 'ml' : 'ta';
   if (l === 'mix') return pick(KLs ? ['ml','mg','en','mg'] : ['ta','tg','en','tg']);
   return l;
+}
+const RIDER_PROXY = {get x(){ return P ? P.x : 0; }, get z(){ return P ? P.z : 0; }};
+function riderShout(kind){
+  if (!(RIDER || (BUS && BUS.onboard > 0)) || onFoot) return;
+  const k = kind === 'red' ? 'rider' : kind === 'speed' ? 'riderSpeed' : kind === 'gun' ? 'riderGun' : 'riderCrash';
+  RIDER_PROXY._saidT = 0; speak(RIDER_PROXY, k, P.def.cat === 'bus' ? 3.4 : 2.4);
+  if (RIDER) { RIDER.comfort -= kind === 'red' ? 15 : 8; if (kind === 'red' && !RIDER._toldRed) { RIDER._toldRed = true; toast('⭐ ' + RIDER.name + ' will remember that in the review.', 'bad'); } }
 }
 function speak(target, kind, height){
   if (!S || S.settings.reactions === false || !target) return;
@@ -1661,9 +1737,9 @@ function selectCity(c){
   const cost = Math.round(km * (P.def.cat === 'bus' ? 3 : P.def.cat === 'auto' ? 1 : 2));
   const hrs = (km / 55);
   card.innerHTML = '<h3>' + c.en + ' <span class="native">' + c.nt + '</span></h3><p class="small">' + c.dist + ' district · ' + (c.st === 'KL' ? 'Kerala' : 'Tamil Nadu') + (S.stats.cities.includes(c.id) ? ' · visited' : '') + '</p>' +
-    (c === cur ? '<p>You are here.</p>' : '<p>' + km + ' km by road · about ' + (hrs < 1 ? Math.round(hrs*60) + ' min' : hrs.toFixed(1) + ' h') + ' · fuel & tolls ' + money(cost) + '</p><div class="row" style="justify-content:flex-start"><button class="btn" id="hwBtn">🛣 Drive on the highway</button><button class="btn ghost" id="goBtn">⚡ Quick travel</button></div><p class="small">Highway trips are shortened so they take a few minutes.</p>');
+    (c === cur ? '<p>You are here.</p>' : '<p>' + km + ' km by road · about ' + (hrs < 1 ? Math.round(hrs*60) + ' min' : hrs.toFixed(1) + ' h') + ' · fuel & tolls ' + money(cost) + '</p><div class="row" style="justify-content:flex-start"><button class="btn" id="hwBtn">🧭 Drive there (GPS)</button><button class="btn ghost" id="goBtn">⚡ Quick travel</button></div><p class="small">GPS guides you to the highway flyover at the edge of town. Highways are shortened so trips take a few minutes, and you pay tolls on the way.</p>');
   const hb = $('hwBtn');
-  if (hb) hb.onclick = () => { const pay = Math.min(Math.round(cost*0.6), Math.max(0, S.money)); S.money -= pay; $('mapScreen').classList.add('hidden'); if (onFoot) { if (INTERIOR) leaveBuilding(); getIn(); } startHighway(c.id); setPaused(false); };
+  if (hb) hb.onclick = () => { S.navDest = c.id; $('mapScreen').classList.add('hidden'); setPaused(false); const a = W.highway ? null : approachToward(c); toast(a ? '🧭 GPS set: take the ' + DIRS[a.dir].en.toLowerCase() + ' highway flyover toward ' + c.en : '🧭 GPS set for ' + c.en, 'info'); phoneNote('Follow the GPS to the highway flyover at the edge of town.'); persist(); };
   const gb = $('goBtn');
   if (gb) gb.onclick = () => {
     const pay = Math.min(cost, Math.max(0, S.money));
@@ -1692,7 +1768,7 @@ function frame(now){
     if (onFoot) stepFoot(dt); else stepPlayer(dt);
     updateWeather(dt); updateChecks(dt); updateRoute(dt); updateHighway(dt);
     if (PHONE.noteT > 0) PHONE.noteT -= dt;
-    updateTraffic(dt); updateTrains(dt); updatePeds(dt); updateAnimals(dt); updatePolice(dt);
+    updateTraffic(dt); updateTrains(dt); updatePeds(dt); updateAnimals(dt); updatePolice(dt); updateShots(dt);
     if (!onFoot) updateJobs(dt); else { $('prompt').textContent = ''; destBeam.visible = !!RIDER; }
     updateProcession(dt); updateDebris(dt);
     autosave += dt; if (autosave > 30) { autosave = 0; persist(); }
@@ -1890,3 +1966,85 @@ function boot(){
 const _login = login;
 login = function(id, name){ if (!playing && window.__clearPreview) { window.__clearPreview(); window.__clearPreview = null; } _login(id, name); };
 window.addEventListener('DOMContentLoaded', boot);
+
+// ============ Toll plazas & border check posts ============
+function tollFee(){ const c = P.def.cat; return c === 'bus' ? 325 : c === 'auto' ? 40 : 95; }
+function updateTolls(dt){
+  if (!W.tolls || !W.tolls.length) return;
+  for (const tl of W.tolls) {
+    const dz = P.z - tl.z;
+    // barrier arms: open for paid player and for traffic coming through
+    tl.lanes.forEach(ln => {
+      if (ln.broken) return;
+      const npcNear = NPCS.some(n => n.x > ln.x0 - 0.6 && n.x < ln.x1 + 0.6 && n.z > tl.z - 28 && n.z < tl.z + 6 && (n.dir || 1) > 0);
+      const open = tl.paid || npcNear;
+      ln.ang += clamp((open ? Math.PI/2*0.9 : 0) - ln.ang, -dt*2.2, dt*2.2);
+      ln.pivot.rotation.z = -ln.ang;
+    });
+    if (onFoot || tl.passed) continue;
+    const ln = tl.lanes.find(l => P.x > l.x0 - 0.5 && P.x < l.x1 + 0.5);
+    // warning as you approach
+    if (dz > -160 && dz < -150 && !tl.warned) { tl.warned = true; toast(tl.border ? '🛂 State check post ahead: stop at the barrier' : '🛣 Toll plaza ahead: stop at the barrier to pay ' + money(tollFee()), 'info'); }
+    if (dz > -18 && dz < -2 && Math.abs(P.v) < 1 && !tl.paid) {
+      tl.stopT += dt;
+      if (tl.stopT > 0.5) {
+        if (tl.border) { borderCheck(tl); }
+        else { const fee = tollFee(); S.money -= fee; tl.paid = true; tl.fee = fee; if (S.today) S.today.fines += 0; tone(1320, 0.12, 'sine', 0.06); tone(1760, 0.15, 'sine', 0.05, 0.12); toast('🧾 Toll paid ' + money(fee) + ' · Have a safe journey', 'good'); }
+      }
+    } else if (!tl.paid) tl.stopT = 0;
+    if (tl.border && dz > -40 && dz < -30 && !tl.spoke) { tl.spoke = true; const o = tl.offs[0]; if (o) speak(o, 'check', 2.3); }
+    // drove through without paying / stopping
+    if (dz > 0.5) {
+      tl.passed = true;
+      if (!tl.paid) {
+        if (ln && ln.ang < 0.6) { ln.broken = true; ln.arm.visible = false; crashFx(12); breakParts(P.mesh, 'front', 1, scene, DEBRIS, {x:0, z:4}); S.damage = clamp(S.damage + 6, 0, 100); }
+        addWanted(tl.border ? 3 : 2, tl.border ? 'Ran the ' + STATE_NAME[tl.st].en + ' border check post' : 'Broke through a toll barrier');
+        spawnPoliceBehind(); if (tl.border) setTimeout(() => { if (wanted) spawnPoliceBehind(); }, 900);
+        riderShout('red');
+        if (tl.border) { const o = tl.offs[1]; if (o) { o._saidT = 0; speak(o, 'police', 2.3); } }
+      }
+    }
+  }
+}
+function borderCheck(tl){
+  const items = docStatus();
+  let fine = 0; items.forEach(it => { if (!it.ok) fine += FINES[it.key]; });
+  const tax = P.def.cat === 'auto' ? 0 : P.def.cat === 'bus' ? 400 : 150;
+  S.money -= fine + tax; S.stats.fines += fine; if (S.today) S.today.fines += fine;
+  tl.paid = true;
+  let html = '<h2>🛂 ' + escapeHtml(STATE_NAME[tl.st].en) + ' check post</h2><p class="small">' + escapeHtml(W.nh) + ' · entering ' + escapeHtml(STATE_NAME[tl.st].en) + '</p><div class="checklist">';
+  items.forEach(it => html += '<div class="ck ' + (it.ok ? 'ok' : 'bad') + '">' + (it.ok ? '✅' : '❌') + ' ' + escapeHtml(it.label) + (it.ok ? '' : ' <b>−₹' + FINES[it.key] + '</b>') + '</div>');
+  html += '</div>' + (tax ? '<p>Inter-state entry tax: <b>' + money(tax) + '</b></p>' : '') + (fine ? '<p>Fines paid: <b>' + money(fine) + '</b>. Renew documents at an RTO office.</p>' : '<p><b>"All OK. Go ahead."</b></p>');
+  persist();
+  showModal(html, [{t:'Continue', f:closeModal}]);
+}
+
+// ============ Police gunfire (vehicle damage only) ============
+const SHOTS = [];
+function policeShoot(c){
+  const M = me();
+  // muzzle flash
+  const fl = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshBasicMaterial({color: 0xffd36b}));
+  const f = fwd(c.h); fl.position.set(c.x + f.x*1.2 + f.z*0.9, (c.y||0) + 1.5, c.z + f.z*1.2 - f.x*0.9); scene.add(fl);
+  // tracer toward the player's vehicle (may miss)
+  const hit = Math.random() < 0.55;
+  const tx = M.x + (hit ? 0 : rnd(-2.5, 2.5)), tz = M.z + (hit ? 0 : rnd(-2.5, 2.5)), ty = (P.y||0) + (hit ? 1.2 : rnd(0.5, 2.5));
+  const geo = new THREE.BufferGeometry().setFromPoints([fl.position.clone(), new THREE.Vector3(tx, ty, tz)]);
+  const tr = new THREE.Line(geo, new THREE.LineBasicMaterial({color: 0xfff1a8, transparent: true, opacity: 0.9}));
+  scene.add(tr);
+  SHOTS.push({o: fl, t: 0.07}, {o: tr, t: 0.09});
+  // sound: sharp crack
+  const d = Math.hypot(c.x - M.x, c.z - M.z);
+  playNoiseAt(0.12, clamp(0.9 - d/80, 0.2, 0.9), 1800); tone(140, 0.08, 'square', clamp(0.25 - d/300, 0.05, 0.25));
+  if (hit && !onFoot) {
+    S.damage = clamp(S.damage + 3, 0, 100);
+    playNoiseAt(0.06, 0.4, 4200, 0.05);
+    if (Math.random() < 0.3) breakParts(P.mesh, Math.random() < 0.7 ? 'rear' : 'front', 1, scene, DEBRIS, {x: f.x*3, z: f.z*3});
+    const cr = $('crack'); if (cr) { cr.classList.remove('go'); void cr.offsetWidth; cr.classList.add('go'); }
+    if (Math.random() < 0.25) riderShout('gun');
+    if (S.damage >= 100) { busted('Your vehicle was disabled by police fire.'); }
+  }
+}
+function updateShots(dt){
+  for (let i = SHOTS.length - 1; i >= 0; i--) { const s = SHOTS[i]; s.t -= dt; if (s.t <= 0) { scene.remove(s.o); s.o.geometry.dispose(); SHOTS.splice(i, 1); } }
+}
