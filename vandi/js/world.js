@@ -2,7 +2,8 @@
 'use strict';
 
 const T = 14, HALF = 7, ROAD_HALF = 4.6;
-const ROAD = 1, BUILD = 2, GRASS = 3, WATER = 5, PUMP = 6;
+const ROAD = 1, BUILD = 2, GRASS = 3, WATER = 5, PUMP = 6, RAIL = 7;
+const METRO_CITIES = ['che','ekm','cbe','mdu'], RAIL_CITIES = ['tvm','kkd','try','slm'];
 
 function hashStr(s){ let h = 2166136261; for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h>>>0; }
 function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -103,6 +104,18 @@ function buildTown(city, scene, opts) {
   rows.slice(1,-1).forEach((r,i) => cols.slice(1,-1).forEach((c,j) => { if ((i+j)%2===0) W.signals.push({tx:c, tz:r, grp:(i+j)%4===0?0:1}); }));
   W.sigSet = new Set(W.signals.map(s => s.tx+','+s.tz));
 
+  // --- Railways: ground-level line with level crossings, or an elevated metro
+  W.crossings = []; W.pillars = [];
+  if (RAIL_CITIES.includes(city.id) && rows.length > 2) {
+    const r = rows[1] + 2;
+    if (!rowSet.has(r) && r < maxRoad) {
+      W.railRow = r;
+      for (let tx = 0; tx < N; tx++) if (!colSet.has(tx)) tiles[r*N+tx] = RAIL; else W.crossings.push({tx, tz:r, closed:false, ang:Math.PI/2});
+    }
+  }
+  if (METRO_CITIES.includes(city.id)) W.metroRow = rows[Math.floor(rows.length/2)];
+  W.isCrossing = (tx,tz) => W.railRow === tz && colSet.has(tx);
+
   // --- Points of interest
   const want = ['busstand','temple','church','mosque','museum','rto','police','hospital','carshow','autoshow','taxishow','busshow','petrol','restaurant','restaurant','tea','textiles','bakery','school','market'];
   if (city.big) want.push('mall','college','rail','restaurant','petrol');
@@ -152,7 +165,7 @@ function buildTown(city, scene, opts) {
     const v = isRoad(tx,tz-1) && isRoad(tx,tz+1) && !isRoad(tx-1,tz) && !isRoad(tx+1,tz);
     if (h || v) straight.push({tx,tz,h});
   }
-  W.straight = straight;
+  W.straight = straight.filter(s => !W.isCrossing(s.tx, s.tz) && !(W.railRow !== undefined && Math.abs(s.tz - W.railRow) < 1));
   const bsPick = straight.slice().sort(() => R()-0.5);
   for (const s of bsPick) {
     if (W.busStops.length >= 6) break;
@@ -182,8 +195,8 @@ function buildTown(city, scene, opts) {
     const tx0 = Math.round(px/T), tz0 = Math.round(pz/T);
     for (let dz=-1; dz<=1; dz++) for (let dx=-1; dx<=1; dx++) {
       const tx = tx0+dx, tz = tz0+dz, t = tileAt(tx,tz);
-      if (t !== BUILD && t !== WATER) continue;
-      const m = (t === WATER) ? HALF : HALF - 1.3;
+      if (t !== BUILD && t !== WATER && t !== RAIL) continue;
+      const m = (t === WATER || t === RAIL) ? HALF : HALF - 1.3;
       const cx = tx*T, cz = tz*T;
       const qx = Math.max(cx-m, Math.min(px, cx+m)), qz = Math.max(cz-m, Math.min(pz, cz+m));
       let ddx = px-qx, ddz = pz-qz; const d2 = ddx*ddx+ddz*ddz;
@@ -193,6 +206,7 @@ function buildTown(city, scene, opts) {
         else { const opts2 = [[cx-m-r, pz],[cx+m+r, pz],[px, cz-m-r],[px, cz+m+r]]; let bd=1e9, bp=null; opts2.forEach(o=>{const dd=Math.abs(o[0]-px)+Math.abs(o[1]-pz); if(dd<bd){bd=dd;bp=o;}}); px=bp[0]; pz=bp[1]; }
       }
     }
+    for (const pl of W.pillars) { const dx = px - pl.x, dz = pz - pl.z, d = Math.hypot(dx,dz), rr = r + pl.r; if (d < rr) { hit = true; px = pl.x + dx/(d||1)*rr; pz = pl.z + dz/(d||1)*rr; } }
     return {x:px, z:pz, hit};
   };
 
@@ -215,6 +229,7 @@ function drawGround(W) {
     else if (t === BUILD) { x.fillStyle = KL ? '#b98a64' : '#c9a878'; x.fillRect(X,Z,s,s); }
     else if (t === WATER) { x.fillStyle = W.city.coast && !KL ? '#2a6f9a' : '#2e7280'; x.fillRect(X,Z,s,s); x.strokeStyle='rgba(255,255,255,.18)'; for(let i=0;i<4;i++){x.beginPath(); const yy=Z+R()*s; x.moveTo(X+R()*s*0.3,yy); x.lineTo(X+s*0.6+R()*s*0.4,yy); x.stroke();} }
     else if (t === PUMP) { x.fillStyle = '#8b8b8b'; x.fillRect(X,Z,s,s); }
+    else if (t === RAIL) { x.fillStyle = '#7a6f62'; x.fillRect(X,Z,s,s); x.fillStyle = '#5a4632'; for (let k = 0; k < s; k += 3) x.fillRect(X+k, Z+s/2-5, 1.6, 10); x.fillStyle = '#c9c9c9'; x.fillRect(X, Z+s/2-3.5, s, 1.2); x.fillRect(X, Z+s/2+2.3, s, 1.2); }
     else if (t === ROAD) {
       x.fillStyle = '#b5aea2'; x.fillRect(X,Z,s,s);
       const cx = X+s/2, cz = Z+s/2, rh = ROAD_HALF*S;
@@ -239,6 +254,8 @@ function drawGround(W) {
       if (v) { x.fillRect(cx-rh, Z, 1.5, s); x.fillRect(cx+rh-1.5, Z, 1.5, s); }
     }
   }
+  // rails across level crossings
+  W.crossings.forEach(c => { const X = c.tx*T*S, Z = c.tz*T*S, s = T*S; x.fillStyle = '#d0d0d0'; x.fillRect(X, Z+s/2-3.5, s, 1.2); x.fillRect(X, Z+s/2+2.3, s, 1.2); x.fillStyle = '#f2f2f2'; x.fillRect(X+2, Z+s/2-9, s-4, 1.5); x.fillRect(X+2, Z+s/2+7.5, s-4, 1.5); });
   // zebra crossings at signals
   x.fillStyle = '#efefe6';
   W.signals.forEach(sg => {
@@ -338,6 +355,11 @@ function buildScenery(W, opts) {
     const g = new THREE.BoxGeometry(1,1,1); g.translate(0,0.5,0);
     const im = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({color:0xcfcac0}), slabs.length);
     slabs.forEach((r,i) => { dummy.position.set(r.x,r.y,r.z); dummy.rotation.set(0,0,0); dummy.scale.set(r.w,0.5,r.d); dummy.updateMatrix(); im.setMatrixAt(i,dummy.matrix); });
+    // black rooftop water tanks on many flat roofs
+    const tanks = slabs.filter((r,i) => (i*7) % 10 < 6);
+    const tm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.75,0.75,1.4,10).translate(0,0.7,0), mat(0x1c1c1c), Math.max(1,tanks.length));
+    tanks.forEach((r,i) => { dummy.position.set(r.x + r.w*0.25, r.y+0.5, r.z - r.d*0.2); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); tm.setMatrixAt(i,dummy.matrix); });
+    tm.count = tanks.length; tm.frustumCulled = false; group.add(tm);
     im.frustumCulled = false; group.add(im);
   }
   if (awn.length) {
@@ -385,6 +407,8 @@ function buildScenery(W, opts) {
 
   // traffic lights: three-lamp heads (red / amber / green) with hoods on a white backplate, one per approach
   W.sigLamp = [0,1].map(() => [0,1].map(() => [0x3a0d0d,0x3a2a0a,0x0d3a18].map(c => new THREE.MeshBasicMaterial({color:c}))));
+  // countdown timer boards (one canvas per signal group & direction)
+  W.sigTimer = [0,1].map(() => [0,1].map(() => { const c = document.createElement('canvas'); c.width = 128; c.height = 88; const tex = new THREE.CanvasTexture(c); return {c, tex, mat: new THREE.MeshBasicMaterial({map: tex}), last: ''}; }));
   if (W.signals.length) {
     const heads = [];
     W.signals.forEach(sg => {
@@ -399,6 +423,8 @@ function buildScenery(W, opts) {
       add('pole', H.clone().multiply(local(0,0,0)));
       add('back', H.clone().multiply(local(0,4.0,-0.17)));
       add('box', H.clone().multiply(local(0,4.0,0)));
+      add('cdbox', H.clone().multiply(local(0,3.05,0)));
+      add('cd_'+hd.g+'_'+hd.ax, H.clone().multiply(local(0,3.05,0.16)));
       [0.4,0,-0.4].forEach((dy,ci) => {
         add('visor', H.clone().multiply(local(0,4.0+dy+0.02,0.27,Math.PI/2)));
         add('lamp_'+hd.g+'_'+hd.ax+'_'+ci, H.clone().multiply(local(0,4.0+dy,0.15,Math.PI/2)));
@@ -410,11 +436,14 @@ function buildScenery(W, opts) {
       box: new THREE.BoxGeometry(0.44,1.32,0.3),
       visor: new THREE.CylinderGeometry(0.18,0.18,0.24,10,1,true,-Math.PI/2,Math.PI),
       lamp: new THREE.CylinderGeometry(0.15,0.15,0.03,14),
+      cdbox: new THREE.BoxGeometry(0.56,0.4,0.3),
+      cd: new THREE.PlaneGeometry(0.5,0.34),
     };
-    const mats = { pole: mat(0x6b6f73), back: mat(0xf2f2f2), box: mat(0x161616), visor: new THREE.MeshLambertMaterial({color:0x161616, side:THREE.DoubleSide}) };
+    const mats = { pole: mat(0x6b6f73), back: mat(0xf2f2f2), box: mat(0x161616), cdbox: mat(0x101010), visor: new THREE.MeshLambertMaterial({color:0x161616, side:THREE.DoubleSide}) };
     Object.entries(lists).forEach(([key, arr]) => {
       let geo, m;
       if (key.startsWith('lamp_')) { const [,g,a,c] = key.split('_').map(Number); geo = geos.lamp; m = W.sigLamp[g][a][c]; }
+      else if (key.startsWith('cd_')) { const [,g,a] = key.split('_').map(Number); geo = geos.cd; m = W.sigTimer[g][a].mat; }
       else { geo = geos[key]; m = mats[key]; }
       const im = new THREE.InstancedMesh(geo, m, arr.length); arr.forEach((mx,i) => im.setMatrixAt(i, mx)); im.frustumCulled = false; group.add(im);
     });
@@ -445,6 +474,7 @@ function buildScenery(W, opts) {
   // POI landmarks + bilingual signboards
   W.pois.forEach(p => buildPOI(W, p));
   buildStreetLife(W, byFloors, poiTiles);
+  buildRailways(W);
   // welcome arch near spawn
   buildArch(W);
   W.festDecor = new THREE.Group(); group.add(W.festDecor);
@@ -759,4 +789,71 @@ function buildStreetLife(W, byFloors, poiTiles){
     [-2.6,2.6].forEach(x => { const post = new THREE.Mesh(new THREE.BoxGeometry(0.25,6.5,0.25), mat(0x555555)); post.position.set(x,3.25,-0.15); g.add(post); });
     group.add(g);
   });
+}
+
+// ---------- Railways ----------
+function makeTrainCar(len, body, stripe, h){
+  const g = new THREE.Group();
+  addBox(g, 2.9, h, len-0.6, mat(body), 0, 0.6 + h/2, 0);
+  addBox(g, 2.92, 0.5, len-0.8, mat(stripe), 0, 0.6 + h*0.32, 0);
+  addBox(g, 2.94, 0.75, len-1.6, mat(0x1f2a33), 0, 0.6 + h*0.68, 0);
+  addBox(g, 2.4, 0.5, len-0.6, mat(0x333333), 0, 0.35, 0);
+  return g;
+}
+function buildRailways(W){
+  const {N, group} = W;
+  const dummy = new THREE.Object3D();
+  if (W.railRow !== undefined) {
+    const z = W.railRow*T;
+    // fences along the line (gaps at crossings)
+    const fence = [];
+    for (let tx = 0; tx < N; tx++) { if (W.isCrossing(tx, W.railRow)) continue; [-1,1].forEach(sd => fence.push([tx*T, z + sd*(HALF-0.3)])); }
+    const fm = new THREE.InstancedMesh(new THREE.BoxGeometry(T,1.1,0.12).translate(0,0.55,0), mat(0x8a8a8a), fence.length);
+    fence.forEach((f,i) => { dummy.position.set(f[0],0,f[1]); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); fm.setMatrixAt(i,dummy.matrix); });
+    fm.frustumCulled = false; group.add(fm);
+    // boom barriers & flashing lights at each crossing
+    W.crossings.forEach(c => {
+      const cx = c.tx*T; c.arms = []; c.lights = [];
+      [-1,1].forEach(sd => {
+        const zz = z + sd*6.4;
+        const post = new THREE.Mesh(boxGeo(0.35,1.4,0.35), mat(0xf2f2f2)); post.position.set(cx - sd*5.2, 0.7, zz); group.add(post);
+        const pivot = new THREE.Group(); pivot.position.set(cx - sd*5.2, 1.25, zz); group.add(pivot);
+        const arm = new THREE.Group(); pivot.add(arm);
+        for (let k = 0; k < 6; k++) { const seg = new THREE.Mesh(boxGeo(1.6,0.14,0.14), mat(k%2 ? 0xd91e18 : 0xffffff)); seg.position.set(sd*(0.8 + k*1.6), 0, 0); arm.add(seg); }
+        pivot.rotation.z = sd*Math.PI/2*0.95; c.arms.push({pivot, sd});
+        const lm = new THREE.MeshBasicMaterial({color:0x330000}); const li = new THREE.Mesh(new THREE.SphereGeometry(0.18,8,6), lm); li.position.set(cx - sd*5.2, 2.6, zz); group.add(li);
+        const lp = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,2.6,5), mat(0x444444)); lp.position.set(cx - sd*5.2, 1.3, zz); group.add(lp);
+        c.lights.push(lm);
+      });
+    });
+    // the train: engine + 8 coaches
+    const tg = new THREE.Group();
+    const eng = makeTrainCar(18, 0x1f4e8c, 0xf2c21b, 3.4); eng.position.x = 0; tg.add(eng);
+    for (let i = 1; i <= 8; i++) { const c = makeTrainCar(20, 0x8b2e2a, 0xf4efe0, 3.3); c.position.x = -i*20.5; tg.add(c); }
+    tg.children.forEach(c => c.rotation.y = Math.PI/2);
+    tg.position.set(-9999, 0, z); group.add(tg);
+    W.train = {mesh: tg, x: -9999, dir: 1, active: false, next: 8, len: 8*20.5 + 18, speed: 16, z};
+  }
+  if (W.metroRow !== undefined) {
+    const z = W.metroRow*T, L = (N-1)*T, y = 9.5;
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(L + T, 1.3, 6.6), mat(0xbfb9ad)); deck.position.set(L/2, y, z); group.add(deck);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(L + T, 0.3, 0.2), mat(0x777777)); [-1.6,1.6].forEach(o => { const r2 = rail.clone(); r2.position.set(L/2, y+0.8, z+o); group.add(r2); });
+    const pl = [];
+    for (let tx = 1; tx < N-1; tx += 2) { if (W.isRoad(tx, W.metroRow) && !W.isInter(tx, W.metroRow)) { pl.push(tx*T); W.pillars.push({x: tx*T, z, r: 0.9}); } }
+    const pm = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.85,1.0,y-0.6,10).translate(0,(y-0.6)/2,0), mat(0xc9c3b6), Math.max(1,pl.length));
+    pl.forEach((x,i) => { dummy.position.set(x,0,z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix(); pm.setMatrixAt(i,dummy.matrix); });
+    pm.count = pl.length; pm.frustumCulled = false; group.add(pm);
+    const stations = [Math.round(L*0.3), Math.round(L*0.7)];
+    stations.forEach(sx => {
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(34, 0.6, 11), mat(0xd8d2c4)); plat.position.set(sx, y+0.2, z); group.add(plat);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(36, 0.4, 12), mat(0x2471a3)); roof.position.set(sx, y+5.4, z); group.add(roof);
+      [-16,0,16].forEach(o => [-5,5].forEach(w => { const c = new THREE.Mesh(boxGeo(0.4,5,0.4), mat(0x888888)); c.position.set(sx+o, y+2.9, z+w); group.add(c); }));
+      const tex = makeSignTexture(['METRO', W.KL ? 'മെട്രോ' : 'மெட்ரோ'], '#2471a3', '#fff', 512, 160);
+      const sg = new THREE.Sprite(new THREE.SpriteMaterial({map: tex})); sg.scale.set(8, 2.5, 1); sg.position.set(sx, y+7.6, z); group.add(sg);
+    });
+    const mg = new THREE.Group();
+    for (let i = 0; i < 3; i++) { const c = makeTrainCar(20, 0xf4f4f0, W.KL ? 0x0f8b8d : 0x1f8f3a, 3.2); c.rotation.y = Math.PI/2; c.position.x = -i*20.5; mg.add(c); }
+    mg.position.set(0, y + 0.65, z); group.add(mg);
+    W.metro = {mesh: mg, x: 40, dir: 1, v: 0, wait: 0, stations, len: 61, min: 40, max: L - 10};
+  }
 }

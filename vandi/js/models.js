@@ -77,6 +77,21 @@ function makeVehicle(kind, def, colors) {
     addBox(g, wid+0.05,0.3,0.25, mat(0x333333), 0,0.45,-len/2-0.1, 'rear');
     [len*0.33, -len*0.33].forEach(z=>[-wid/2+0.12, wid/2-0.12].forEach(x=>{const w=new THREE.Mesh(WHEEL_GEO_BIG,mat(0x111111)); w.position.set(x,0.5,z); g.add(w); wheels.push(w);}));
     ud.headY = 0.95; ud.paint = [body, band];
+  } else if (kind === 'truck') {
+    const cab = mat(c1), box = mat(c2), dark = mat(0x1f2a33);
+    addBox(g, wid,2.3,2.4, cab, 0,1.55,len/2-1.2);
+    addBox(g, wid*0.9,0.8,0.06, GLASS(), 0,2.05,len/2+0.02, 'front');
+    addBox(g, wid,2.9,len-2.8, box, 0,2.0,-1.3);
+    addBox(g, wid+0.02,0.35,len-2.9, mat(0xf2c21b), 0,3.2,-1.3);
+    addBox(g, wid*0.95,0.5,len, dark, 0,0.55,0);
+    addBox(g, 0.35,0.22,0.08, headM, -wid*0.36,1.0,len/2+0.04, 'front');
+    addBox(g, 0.35,0.22,0.08, headM, wid*0.36,1.0,len/2+0.04, 'front');
+    addBox(g, wid+0.05,0.3,0.25, mat(0x333333), 0,0.5,len/2+0.1, 'front');
+    addBox(g, 0.3,0.25,0.08, tailM, -wid*0.38,0.9,-len/2-0.04, 'rear');
+    addBox(g, 0.3,0.25,0.08, tailM, wid*0.38,0.9,-len/2-0.04, 'rear');
+    addBox(g, wid+0.05,0.3,0.25, mat(0x333333), 0,0.45,-len/2-0.1, 'rear');
+    [len/2-1.2, -len*0.15, -len/2+1.2].forEach(z => [-wid/2+0.12, wid/2-0.12].forEach(x => {const w=new THREE.Mesh(WHEEL_GEO_BIG,mat(0x111111)); w.position.set(x,0.5,z); g.add(w); wheels.push(w);}));
+    ud.headY = 1.0;
   } else if (kind === 'bike') {
     addBox(g, 0.35,0.5,1.7, mat(0x222222), 0,0.55,0);
     addBox(g, 0.42,0.35,0.9, mat(c1), 0,0.85,0.1);

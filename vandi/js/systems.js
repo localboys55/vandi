@@ -175,7 +175,7 @@ function computeRoute(from, to){
 let ROUTE = null, routeT = 0;
 function routeTarget(){
   if (onFoot) return null;
-  if (RIDER) return RIDER.dest.stop;
+  if (RIDER) return RIDER.dest.stop || null;
   if (BUS) return BUS.stops[BUS.next];
   if (WAITING.length) return WAITING[0];
   return null;

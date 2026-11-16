@@ -14,7 +14,7 @@ function fmtTime(m){ m = Math.floor(m)%1440; let h = Math.floor(m/60), mm = m%60
 function haversine(a,b){ const R=6371, dLat=(b.lat-a.lat)*Math.PI/180, dLon=(b.lon-a.lon)*Math.PI/180; const s=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
 
 const DIST_SCALE = 4;       // metered distance multiplier (towns are compact)
-const SPEED_LIMIT = 50;     // km/h in town
+const SPEED_LIMIT_TOWN = 50; function speedLimit(){ return W && W.highway ? 100 : SPEED_LIMIT_TOWN; }
 const IS_TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
 // ============ Accounts & saving (on this device) ============
@@ -37,7 +37,8 @@ let S = null, ACC = null; // current save + account id
 let saveTimer = 0, lastSaveOk = 0;
 function persist(){
   if (!S || !ACC) return;
-  if (P && W) S.pos = {x:+P.x.toFixed(1), z:+P.z.toFixed(1), h:+P.h.toFixed(2)};
+  if (P && W) S.pos = W.highway ? null : {x:+P.x.toFixed(1), z:+P.z.toFixed(1), h:+P.h.toFixed(2)};
+  if (W && W.highway) S.city = W.city.id;
   S.updatedAt = Date.now();
   const ok = store.set(SAVE_PREFIX+ACC, S);
   lastSaveOk = ok ? Date.now() : -1;
@@ -77,6 +78,12 @@ function initThree(){
     vertexShader:'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader:'uniform vec3 top; uniform vec3 bot; varying vec3 vP; void main(){ float h = clamp(normalize(vP).y*1.6+0.08,0.0,1.0); gl_FragColor = vec4(mix(bot, top, pow(h,0.7)),1.0); }'});
   window.SKY = new THREE.Mesh(new THREE.SphereGeometry(1400, 24, 12), skyMat); SKY.renderOrder = -1; scene.add(SKY);
+  // soft clouds
+  { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+    for (let i = 0; i < 7; i++) { const g = x.createRadialGradient(30+Math.random()*68, 50+Math.random()*28, 4, 64, 64, 34+Math.random()*20); g.addColorStop(0,'rgba(255,255,255,.9)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0,0,128,128); }
+    const tex = new THREE.CanvasTexture(c); window.CLOUDS = new THREE.Group();
+    for (let i = 0; i < 18; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, transparent: true, opacity: 0.85, fog: false, depthWrite: false})); const a = Math.random()*Math.PI*2, d = 500 + Math.random()*500; sp.position.set(Math.cos(a)*d, 160 + Math.random()*120, Math.sin(a)*d); sp.scale.set(260 + Math.random()*200, 90 + Math.random()*60, 1); CLOUDS.add(sp); }
+    scene.add(CLOUDS); }
   headLight = new THREE.SpotLight(0xfff3c4, 0, 70, 0.6, 0.5, 1.2); scene.add(headLight); scene.add(headLight.target);
   // rain
   const n = 1400, pos = new Float32Array(n*6);
@@ -121,7 +128,19 @@ function disposeTown(){
   NPCS = []; PEDS = []; ANIMALS = []; POLICE = []; DEBRIS = []; WAITING = []; CROWDS = []; PROC = null; RIDER = null; BUS = null;
   wanted = 0; lostTimer = 0;
 }
+function keepInterRider(){ return RIDER && RIDER.inter ? RIDER : null; }
+function restoreInterRider(r){
+  if (!r) return;
+  RIDER = r; if (P.paxMesh) P.paxMesh.visible = true;
+  if (!W.highway && W.city.id === r.destCity.id) {
+    const bs = W.poiBy('busstand')[0] || W.pois[0];
+    r.dest = {en: bs.en, nt: bs.nt, stop: bs.stop};
+    destBeam.position.set(bs.stop.x, 0, bs.stop.z); destBeam.material.color.setHex(0x19c3b8); destBeam.visible = true;
+    phoneNote(r.name + ': drop me at the ' + W.city.en + ' bus stand');
+  }
+}
 function loadCity(id, keepPos){
+  const keepR = keepInterRider();
   disposeTown();
   const city = cityById(id);
   S.city = city.id;
@@ -135,9 +154,11 @@ function loadCity(id, keepPos){
   setupDay(); BANNER.t = 8;
   radioCityChanged();
   setupJob();
+  restoreInterRider(keepR);
   toast('📍 ' + city.en + ' · ' + city.dist + ' · ' + STATE_NAME[city.st].en, 'info');
 }
 function setupDay(){
+  if (W.highway) { festToday = null; return; }
   const c = W.city;
   const h = hashStr(c.id + ':' + S.day);
   const r = h % 9;
@@ -189,37 +210,58 @@ function switchVehicle(id){
 }
 
 // ============ Traffic ============
+const NPC_TYPES_HW = [
+  {k:'car', def:{len:4.4,wid:1.8,id:'npc'}, w:6}, {k:'truck', def:{len:9,wid:2.5,id:'npc'}, w:4}, {k:'bus', def:{len:11,wid:2.5,id:'npc'}, w:2}, {k:'taxi', def:{len:4.4,wid:1.8,id:'npc'}, w:2}, {k:'bike', def:{len:1.9,wid:0.6,id:'npc'}, w:1},
+];
 const NPC_TYPES = [
   {k:'car', def:{len:4.2,wid:1.75,id:'npc'}, w:6}, {k:'auto', def:{len:2.7,wid:1.45,id:'npc'}, w:5},
   {k:'bus', def:{len:10.5,wid:2.5,id:'npc'}, w:2}, {k:'bike', def:{len:1.9,wid:0.6,id:'npc'}, w:4}, {k:'taxi', def:{len:4.2,wid:1.75,id:'npc'}, w:2},
 ];
 const NPC_COLORS = [[0xd0d3d4,0x222222],[0x7b241c,0x222],[0x1a5276,0x111],[0xf4f4f0,0x333],[0x145a32,0x111],[0x6e2c00,0x222],[0x34495e,0x111]];
 const TRAFFIC_LEVELS = {light:{k:0.6, label:'Light'}, normal:{k:1, label:'Normal'}, heavy:{k:1.7, label:'Heavy'}, rush:{k:2.5, label:'Rush hour'}};
-function trafficCount(){ return Math.round((W.city.big ? 26 : 18) * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); }
+function trafficCount(){ if (W.highway) return Math.round(30 * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); return Math.round((W.city.big ? 26 : 18) * (TRAFFIC_LEVELS[S.settings.traffic || 'normal'] || TRAFFIC_LEVELS.normal).k * (S.settings.gfx === 'high' ? 1 : 0.85)); }
 function respawnTraffic(){ NPCS.forEach(n => { scene.remove(n.mesh); if (n.out) scene.remove(n.out.mesh); }); NPCS = []; spawnTraffic(); }
 function spawnTraffic(){
   const count = trafficCount();
   const lanes = [];
-  W.roadLines.forEach((ln,i) => { lanes.push([i,1]); lanes.push([i,-1]); });
+  W.roadLines.forEach((ln,i) => { if (ln.dirFixed) lanes.push([i, ln.dirFixed]); else { lanes.push([i,1]); lanes.push([i,-1]); } });
   lanes.sort(() => Math.random()-0.5);
   const combos = [];
   for (let k = 0; combos.length < count; k++) { combos.push(lanes[k % lanes.length]); if (k > 400) break; }
   const perLane = {};
-  const total = NPC_TYPES.reduce((a,t)=>a+t.w,0);
+  const TYPES = W.highway ? NPC_TYPES_HW : NPC_TYPES;
+  const total = TYPES.reduce((a,t)=>a+t.w,0);
   for (let i = 0; i < combos.length; i++) {
-    let r = Math.random()*total, tp = NPC_TYPES[0];
-    for (const t of NPC_TYPES) { if ((r -= t.w) < 0) { tp = t; break; } }
-    const cols = tp.k === 'auto' ? [[0xf2c21b,0x1d1d1d],[0x2f8f3a,0xf2c21b]][i%2] : tp.k === 'bus' ? [[0xc0392b,0xf4efe0],[0x1f8f6f,0xf4efe0],[0x2c3e8f,0xf2c21b],[0xd35400,0xf4efe0]][i%4] : tp.k === 'taxi' ? [0xf2d21b,0x222222] : pick(NPC_COLORS);
+    let r = Math.random()*total, tp = TYPES[0];
+    for (const t of TYPES) { if ((r -= t.w) < 0) { tp = t; break; } }
+    const cols = tp.k === 'auto' ? [[0xf2c21b,0x1d1d1d],[0x2f8f3a,0xf2c21b]][i%2] : tp.k === 'bus' ? [[0xc0392b,0xf4efe0],[0x1f8f6f,0xf4efe0],[0x2c3e8f,0xf2c21b],[0xd35400,0xf4efe0]][i%4] : tp.k === 'taxi' ? [0xf2d21b,0x222222] : tp.k === 'truck' ? pick([[0xd35400,0x1f618d],[0xc0392b,0x27ae60],[0x2874a6,0xf2c21b],[0xf2c21b,0xc0392b],[0x7d3c98,0xe67e22]]) : pick(NPC_COLORS);
     const mesh = makeVehicle(tp.k, tp.def, cols); scene.add(mesh);
     const [li, dir] = combos[i]; const line = W.roadLines[li];
     const key = li + ':' + dir, slot = perLane[key] = (perLane[key] || 0) + 1;
     const span = Math.max(1, line.max - line.min);
-    const n = {mesh, line, dir, s: line.min + ((hashStr(key) % 1000)/1000*span + slot*span/Math.max(2, Math.ceil(count/lanes.length)+1)) % span, v:0, pull:0, cruise: (tp.k==='bus'?9:tp.k==='bike'?12:11) + rnd(-1.5,1.5), len: tp.def.len, wid: tp.def.wid, kind: tp.k, x:0, z:0, h:0, blocked:0};
+    if (W.highway) { mesh.userData.hw = true; }
+    const n = {mesh, line, dir, s: line.min + ((hashStr(key) % 1000)/1000*span + slot*span/Math.max(2, Math.ceil(count/lanes.length)+1)) % span, v:0, pull:0, cruise: (W.highway ? (tp.k==='truck'?16:tp.k==='bus'?19:22) : (tp.k==='bus'?9:tp.k==='bike'?12:11)) + rnd(-1.5,1.5), len: tp.def.len, wid: tp.def.wid, kind: tp.k, x:0, z:0, h:0, blocked:0};
     placeNpc(n, 0);
     // avoid spawning on top of the player
     if (Math.hypot(n.x-P.x, n.z-P.z) < 25) n.s = (n.s + 120) % (line.max || 1);
     NPCS.push(n);
   }
+}
+function signalPhase(g, axis){
+  const t = (simT + g*15) % 30;
+  if (axis === 'NS') { if (t < 12) return {st:'G', left: Math.ceil(12-t)}; if (t < 15) return {st:'Y', left: Math.ceil(15-t)}; return {st:'R', left: Math.ceil(30-t)}; }
+  if (t < 15) return {st:'R', left: Math.ceil(15-t)}; if (t < 27) return {st:'G', left: Math.ceil(27-t)}; return {st:'Y', left: Math.ceil(30-t)};
+}
+function nextSignalAhead(){
+  if (!W || !W.signals || !W.signals.length || onFoot || INTERIOR) return null;
+  const f = fwd(P.h); let best = null, bd = 140;
+  for (const sg of W.signals) {
+    const dx = sg.tx*T - P.x, dz = sg.tz*T - P.z, al = dx*f.x + dz*f.z, lt = Math.abs(dx*f.z - dz*f.x);
+    if (al > 4 && al < bd && lt < 6) { bd = al; best = sg; }
+  }
+  if (!best) return null;
+  const axis = Math.abs(f.x) > Math.abs(f.z) ? 'EW' : 'NS';
+  return Object.assign({dist: Math.round(bd)}, signalPhase(best.grp, axis));
 }
 function lightState(tx, tz, axis){
   const sg = W.signals.find(s => s.tx===tx && s.tz===tz); const grp = sg ? sg.grp : 0;
@@ -266,6 +308,10 @@ function updateTraffic(dt){
         if (st === 'R' || (st === 'Y' && ahead > 4)) target = Math.min(target, Math.max(0, ahead - 0.5) * 0.9);
       }
     }
+    if (L.axis === 'z' && W.crossings && W.crossings.length) {
+      const c = W.crossings.find(c => c.tx === L.idx);
+      if (c && c.closed) { const stop = c.tz*T - n.dir*(HALF + 3); const ahead = (stop - n.s)*n.dir; if (ahead > -0.5 && ahead < 16) target = Math.min(target, Math.max(0, ahead - 0.5)*0.9); }
+    }
     const obs = n.pull > 0.6 ? 1e9 : obstacleAhead(n.x, n.z, n.h, n.len/2 + 14, n.wid/2 + 0.3, n);
     if (obs < n.len/2 + 14) target = Math.min(target, Math.max(0, (obs - n.len/2 - 3.5)) * 0.9);
     n.v += clamp(target - n.v, -9*dt, 3*dt);
@@ -278,8 +324,98 @@ function updateTraffic(dt){
   }
 }
 
+// ============ Highway trips ============
+function startHighway(toId){
+  const from = W && W.highway ? W.city : cityById(S.city), to = cityById(toId);
+  const keepR = keepInterRider();
+  clearJob();
+  disposeTown(); if (P) scene.remove(P.mesh);
+  W = buildHighway(from, to, scene, {});
+  spawnPlayer(S.active, W.spawn.x, W.spawn.z, W.spawn.h);
+  spawnTraffic(); enableShadows(); festToday = null; BANNER.t = 0;
+  restoreInterRider(keepR);
+  radioCityChanged();
+  updateCamera(0, true);
+  toast('🛣 ' + W.nh + ' to ' + to.en + ' · ' + W.realKm + ' km', 'good');
+  phoneNote('Drive safe! Highway limit is 100 km/h.');
+  persist();
+}
+function updateHighway(dt){
+  if (!W || !W.highway) return;
+  const M = me();
+  // which district are we in?
+  let zone = W.zones[0]; for (const z of W.zones) if (M.z >= z.z) zone = z;
+  if (zone.c !== W.city) {
+    const prevSt = W.city.st; W.city = zone.c; S.city = zone.c.id;
+    if (!S.stats.cities.includes(zone.c.id)) S.stats.cities.push(zone.c.id);
+    attachRearPanel(P.mesh, W.city, S.plate);
+    toast('📍 Entering ' + zone.c.dist + ' district' + (zone.c.st !== prevSt ? ' · Welcome to ' + STATE_NAME[zone.c.st].en : ''), 'info');
+    radioCityChanged();
+  }
+  if (!onFoot && P.z > W.len - 25) { arriveFromHighway(W.to); return; }
+}
+function arriveFromHighway(c){
+  const km = W.realKm; S.stats.km += 0; S.pos = null;
+  loadCity(c.id, false); updateCamera(0, true);
+  toast('Welcome to ' + c.en + ' · ' + c.nt, 'good'); persist();
+}
+function nearExit(){ if (!W || !W.highway || onFoot) return null; return W.exits.find(e => P.x > 6.5 && P.z > e.z - 75 && P.z < e.z + 25) || null; }
+
+// ============ Trains ============
+function crossingClosed(c){ return c.closed; }
+function updateTrains(dt){
+  if (!W) return;
+  const tr = W.train;
+  if (tr) {
+    if (!tr.active) { tr.next -= dt; if (tr.next <= 0) { tr.active = true; tr.x = tr.dir > 0 ? -300 : W.N*T + 300; tr.horned = false; } }
+    else {
+      tr.x += tr.dir * tr.speed * dt;
+      if ((tr.dir > 0 && tr.x - tr.len > W.N*T + 300) || (tr.dir < 0 && tr.x + tr.len < -300)) { tr.active = false; tr.next = rnd(35, 70); tr.dir *= -1; tr.x = -9999; }
+      tr.mesh.position.x = tr.x; tr.mesh.rotation.y = tr.dir > 0 ? 0 : Math.PI;
+      const M = me();
+      if (!tr.horned && Math.abs(tr.x - M.x) < 320 && Math.abs(tr.z - M.z) < 250) { tr.horned = true; trainHorn(clamp(1 - Math.abs(tr.x - M.x)/400, 0.3, 1)); }
+    }
+    // tail/head extents (the train extends behind the engine)
+    const head = tr.x, tail = tr.x - tr.dir*tr.len;
+    const lo = Math.min(head, tail), hi = Math.max(head, tail);
+    W.crossings.forEach(c => {
+      const cx = c.tx*T;
+      const coming = tr.active && ((tr.dir > 0 && head > cx - 170 && tail < cx + 12) || (tr.dir < 0 && head < cx + 170 && tail > cx - 12));
+      c.closed = coming;
+      const target = coming ? 0 : Math.PI/2*0.95;
+      c.ang += clamp(target - c.ang, -dt*1.2, dt*1.2);
+      c.arms.forEach(a => a.pivot.rotation.z = a.sd * c.ang);
+      const blink = Math.floor(simT*3) % 2;
+      c.lights.forEach((m,i) => m.color.setHex(coming && (blink ^ i) ? 0xff2020 : 0x330000));
+      if (coming && Math.hypot(cx - me().x, tr.z - me().z) < 60 && Math.random() < dt*2) tone(1500, 0.08, 'triangle', 0.05);
+    });
+    // train hits you
+    if (tr.active && !onFoot && Math.abs(P.z - tr.z) < 3.4 && P.x > lo - 2 && P.x < hi + 2 && P.bumpCD <= 0) {
+      P.bumpCD = 2; crashFx(25); breakParts(P.mesh, 'front', 3, scene, DEBRIS, {x:0, z: Math.sign(P.z - tr.z)*8}); breakParts(P.mesh, 'rear', 2, scene, DEBRIS, {x:0,z:0});
+      S.damage = clamp(S.damage + 45, 0, 100); P.z = tr.z + Math.sign(P.z - tr.z || 1)*6; P.v = 0; P.vx = P.vz = 0;
+      toast('🚆 Hit by a train! Never cross when the gates are down.', 'bad');
+      const by = PEDS.find(pd => Math.hypot(pd.x-P.x, pd.z-P.z) < 40); if (by) { by._saidT = 0; speak(by, 'angry'); }
+    }
+  }
+  const mt = W.metro;
+  if (mt) {
+    if (mt.wait > 0) { mt.wait -= dt; mt.v = 0; }
+    else {
+      const st = mt.stations.find(sx => (sx - mt.x)*mt.dir > 0 && (sx - mt.x)*mt.dir < 40);
+      const targetV = st !== undefined ? Math.max(2, Math.abs(st - mt.x)*0.6) : 18;
+      mt.v += clamp(targetV - mt.v, -8*dt, 4*dt);
+      mt.x += mt.dir * mt.v * dt;
+      if (st !== undefined && Math.abs(st - mt.x) < 0.8) { mt.x = st + mt.dir*0.9; mt.wait = 7; }
+      if (mt.x > mt.max) { mt.dir = -1; mt.x = mt.max; mt.wait = 3; } else if (mt.x < mt.min) { mt.dir = 1; mt.x = mt.min; mt.wait = 3; }
+    }
+    mt.mesh.position.x = mt.x + (mt.dir > 0 ? 0 : -mt.len + 20); mt.mesh.rotation.y = mt.dir > 0 ? 0 : Math.PI;
+  }
+}
+function trainHorn(v){ if (!AU.ctx) return; [0, 0.9].forEach(d => { tone(311, 0.8, 'sawtooth', 0.07*v, d); tone(370, 0.8, 'sawtooth', 0.06*v, d); tone(466, 0.8, 'sawtooth', 0.04*v, d); }); }
+
 // ============ Pedestrians & animals ============
 function spawnPeds(){
+  if (!W.straight.length) return;
   const count = (W.city.big ? 34 : 24) * (S.settings.gfx === 'high' ? 1 : 0.7);
   for (let i = 0; i < count; i++) {
     const s = pick(W.straight);
@@ -317,6 +453,7 @@ function updatePeds(dt){
   }
 }
 function spawnAnimals(){
+  if (!W.straight.length) return;
   const n = W.city.big ? 5 : 7;
   for (let i = 0; i < n*2; i++) {
     const type = i < n ? 'cow' : 'dog';
@@ -357,6 +494,7 @@ function addWanted(n, why){
 function spawnPoliceBehind(){
   if (INTERIOR) return;
   const M = me(), f = fwd(M.h);
+  if (W.highway) { const mesh = makeVehicle('police', {len:4.4,wid:1.8,id:'police'}, null); scene.add(mesh); const x = 4.5, z = M.z - 30; POLICE.push({mesh, x, z, h:0, v: Math.max(15, Math.abs(M.v||0)), len:4.4, wid:1.8, stuck:0, rev:0}); setTimeout(() => { const c = POLICE[POLICE.length-1]; if (c) speak(c, 'police', 2.6); }, 300); return; }
   let x = M.x - f.x*26, z = M.z - f.z*26;
   if (W.collide(x, z, 1.2).hit || W.surfaceAt(x,z) !== ROAD) {
     const line = W.roadAt(M.x, M.z, M.h);
@@ -371,7 +509,8 @@ function ensurePolice(){
   while (POLICE.length < want) {
     // spawn on a road point 90-170m away
     let best = null;
-    for (let tries = 0; tries < 40; tries++) {
+    if (W.highway) best = {x: 4.5, z: me().z - rnd(120, 180)};
+    for (let tries = 0; tries < 40 && !W.highway; tries++) {
       const s = pick(W.straight); const x = s.tx*T, z = s.tz*T; const d = Math.hypot(x-P.x, z-P.z);
       if (d > 80 && d < 180) { best = {x,z}; break; }
       if (!best || Math.abs(d-120) < Math.abs(Math.hypot(best.x-P.x,best.z-P.z)-120)) best = {x,z};
@@ -405,7 +544,7 @@ function updatePolice(dt){
     if (r.hit) { c.v *= 0.6; c.stuck += dt; } else c.stuck = Math.max(0, c.stuck - dt);
     c.x = r.x; c.z = r.z;
     if (c.stuck > 1.2) { c.rev = 1.0; c.stuck = 0; }
-    if (d > 260) { // teleport closer, out of sight
+    if (d > 260 && W.straight.length) { // teleport closer, out of sight
       const s = pick(W.straight); const x = s.tx*T, z = s.tz*T; if (Math.hypot(x-M.x,z-M.z) > 70 && Math.hypot(x-M.x,z-M.z) < 150) { c.x = x; c.z = z; }
     }
     c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.h;
@@ -551,10 +690,37 @@ function spawnWaiting(){
     phoneNote('New ride request: ' + WAITING[WAITING.length-1].name); tone(1046,0.12,'sine',0.12); tone(1318,0.18,'sine',0.12,0.12);
   }
 }
+function interSchedule(){
+  if (!S.inter || S.inter.day !== S.day) { const n = Math.random() < 0.5 ? 1 : 2; S.inter = {day: S.day, times: Array.from({length: n}, () => 480 + Math.floor(Math.random()*720)).sort((a,b) => a-b), done: 0}; }
+  const due = S.inter.times[S.inter.done];
+  if (due !== undefined && (S.min % 1440) >= due && !RIDER && !WAITING.some(w => w.inter)) { S.inter.done++; spawnIntercity(); }
+}
+function spawnIntercity(){
+  const here = W.city;
+  const opts = CITIES.filter(c => c !== here).map(c => ({c, km: Math.round(haversine(here, c)*1.3)})).filter(o => o.km >= 40 && o.km <= 260).sort((a,b) => a.km - b.km);
+  if (!opts.length) return;
+  const o = opts[Math.floor(Math.pow(Math.random(), 1.6) * Math.min(opts.length, 10))];
+  let spot = null;
+  for (let t = 0; t < 30 && !spot; t++) { const s2 = pick(W.straight); const side = Math.random()<0.5?-1:1; const x = s2.tx*T + (s2.h ? rnd(-4,4) : side*5.6), z = s2.tz*T + (s2.h ? side*5.6 : rnd(-4,4)); if (Math.hypot(x-P.x, z-P.z) > 50) spot = {x,z}; }
+  if (!spot) return;
+  WAITING.forEach(w => { scene.remove(w.mesh); scene.remove(w.beam); }); WAITING = [];
+  const mesh = makePerson(); mesh.position.set(spot.x,0,spot.z); scene.add(mesh);
+  const bag = new THREE.Mesh(boxGeo(0.5,0.4,0.3), mat(0x6e2c00)); bag.position.set(0.45,0.2,0); mesh.add(bag);
+  const beam = makeBeam(0xbf5af2); beam.position.set(spot.x,0,spot.z); scene.add(beam);
+  const name = pick(PASSENGER_NAMES[here.st]);
+  WAITING.push({x:spot.x, z:spot.z, mesh, beam, inter:true, destCity:o.c, km:o.km, bornMin:S.min, born:simT, name, rating:+(3.8+Math.random()*1.2).toFixed(1), pay: Math.random()<0.6?'UPI':'Cash', hurry:false,
+    dest:{en:o.c.en, nt:o.c.nt, stop:null}});
+  phoneNote('🧳 Long-distance request: ' + here.en + ' → ' + o.c.en + ' · ' + o.km + ' km');
+  toast('🧳 Long-distance ride request to ' + o.c.en + ' (' + o.km + ' km). Check your phone!', 'good');
+  tone(988,0.12,'sine',0.14); tone(1318,0.12,'sine',0.14,0.14); tone(1568,0.2,'sine',0.14,0.28);
+}
+function interFare(r){ const d = P.def; return Math.round(d.base + r.km * d.perKm * (d.cat === 'taxi' ? 1 : 1)); }
 function updateJobs(dt){
+  if (W.highway) { $('prompt').textContent = ''; destBeam.visible = false; return; }
   const cat = P.def.cat, spd = Math.abs(P.v);
   $('prompt').textContent = '';
   if (cat === 'auto' || cat === 'taxi') {
+    interSchedule();
     spawnWaiting();
     for (let i = WAITING.length-1; i >= 0; i--) {
       const w = WAITING[i];
@@ -563,7 +729,15 @@ function updateJobs(dt){
       w.beam.material.opacity = 0.2 + Math.sin(simT*3)*0.08;
       const d = Math.hypot(P.x-w.x, P.z-w.z);
       if (!RIDER && d < 7) {
-        if (spd < 2.8) { // board
+        if (spd < 2.8 && w.inter) { // long-distance passenger
+          RIDER = {name:w.name, inter:true, destCity:w.destCity, km:w.km, dest:w.dest, hurry:false, start:simT, metered:0, comfort:100, rating:w.rating, pay:w.pay, startMin:S.min, expected: 1e9};
+          scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1);
+          const line = pick(LINES.pick[W.city.st]);
+          bubble(w.name, line[1].replace('{d}', w.destCity.nt), line[0].replace('{d}', w.destCity.en));
+          if (P.paxMesh) P.paxMesh.visible = true; destBeam.visible = false;
+          toast('🛣 Tap "Start trip" or use the map to take the highway to ' + w.destCity.en, 'info');
+          ding(2);
+        } else if (spd < 2.8) { // board
           RIDER = {name:w.name, dest:w.dest, hurry:w.hurry, start:simT, metered:0, comfort:100, rating:w.rating, pay:w.pay, startMin:S.min,
             expected: (Math.abs(w.dest.stop.x-w.x)+Math.abs(w.dest.stop.z-w.z))*1.15/8 + 12};
           scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1);
@@ -573,9 +747,10 @@ function updateJobs(dt){
           if (P.paxMesh) P.paxMesh.visible = true;
           ding(1);
         } else $('prompt').textContent = 'Slow down to pick up ' + w.name;
-      } else if (simT - w.born > 260 && d > 150) { scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1); phoneNote(w.name + ' cancelled the ride'); }
+      } else if (w.inter ? ((S.min - w.bornMin + 1440) % 1440 > 120 && d > 60) : (simT - w.born > 260 && d > 150)) { scene.remove(w.mesh); scene.remove(w.beam); WAITING.splice(i,1); phoneNote(w.name + (w.inter ? ' found another ride to ' + w.destCity.en : ' cancelled the ride')); }
     }
-    if (RIDER) {
+    if (RIDER && !RIDER.dest.stop) { /* long-distance: waiting to start the highway trip */ }
+    else if (RIDER) {
       RIDER.metered += Math.max(0, P.v)*dt;
       const d = Math.hypot(P.x-RIDER.dest.stop.x, P.z-RIDER.dest.stop.z);
       destBeam.material.opacity = 0.22 + Math.sin(simT*3)*0.08;
@@ -613,15 +788,15 @@ function updateJobs(dt){
 function endRide(ok){
   if (!RIDER) return;
   if (ok) {
-    const d = P.def, km = RIDER.metered * DIST_SCALE / 1000;
+    const d = P.def, km = RIDER.inter ? RIDER.km : RIDER.metered * DIST_SCALE / 1000;
     const minKm = d.cat === 'taxi' ? 2 : 1.5;
-    let fare = Math.round(Math.max(d.base, d.base + (km - minKm)*d.perKm));
+    let fare = RIDER.inter ? interFare(RIDER) : Math.round(Math.max(d.base, d.base + (km - minKm)*d.perKm));
     if (isRaining()) fare += 10;
     const night = isNight();
     if (night) fare = Math.round(fare * 1.5);
-    const ratio = (simT - RIDER.start) / RIDER.expected;
+    const ratio = RIDER.inter ? 0.9 : (simT - RIDER.start) / RIDER.expected;
     const comfort = clamp(RIDER.comfort, 0, 100)/100;
-    let tip = Math.round(comfort * (ratio < 1 ? 25 : ratio < 1.4 ? 12 : 0) * (d.cat === 'taxi' ? 2 : 1));
+    let tip = Math.round(comfort * (ratio < 1 ? 25 : ratio < 1.4 ? 12 : 0) * (d.cat === 'taxi' ? 2 : 1) * (RIDER.inter ? 6 : 1));
     if (RIDER.hurry && ratio < 0.9) tip += 40;
     const total = fare + tip;
     earn(total, night); S.stats.trips++; S.today.trips++;
@@ -793,11 +968,12 @@ function stepPlayer(dt){
     const axis = P.tile.tx !== tx ? 'EW' : 'NS';
     if (lightState(tx, tz, axis) === 'R') addWanted(1, 'Jumped a red light');
   }
+  if (P.tile && P.tile.key !== key && W.isCrossing && W.isCrossing(tx, tz) && sp > 2) { const c = W.crossings.find(c => c.tx === tx); if (c && c.closed) addWanted(1, 'Crossed a closed level crossing'); }
   P.tile = {tx, tz, key};
   const kmh = sp*3.6;
   for (const c of W.cams) {
-    if (Math.hypot(c.x-P.x, c.z-P.z) < 13 && kmh > SPEED_LIMIT + 4 && simT - c.last > 8) {
-      c.last = simT; flash(); addWanted(1, 'Speed camera: ' + Math.round(kmh) + ' km/h in a ' + SPEED_LIMIT + ' zone');
+    if (Math.hypot(c.x-P.x, c.z-P.z) < 13 && kmh > speedLimit() + 4 && simT - c.last > 8) {
+      c.last = simT; flash(); addWanted(1, 'Speed camera: ' + Math.round(kmh) + ' km/h in a ' + speedLimit() + ' zone');
     }
   }
   S.stats.km += sp*dt/1000*DIST_SCALE;
@@ -899,6 +1075,7 @@ function updateEnvironment(dt){
   const rl = rainLevel();
   if (rl > 0) skyColor.lerp(C_RAIN, Math.min(0.85, rl*0.9));
   if (WX.flash > 0) skyColor.lerp(new THREE.Color(0xe8eeff), 0.7);
+  if (window.CLOUDS) { CLOUDS.position.set(camera.position.x, 0, camera.position.z); CLOUDS.rotation.y += dt*0.002; CLOUDS.children.forEach(c => c.material.opacity = (0.35 + 0.5*dl) * (1 - rl*0.6)); }
   if (window.SKY) { SKY.position.copy(camera.position); SKY.material.uniforms.bot.value.copy(skyColor).lerp(new THREE.Color(0xffffff), 0.25*dl*(1-rl)); SKY.material.uniforms.top.value.copy(skyColor).multiplyScalar(0.75 + 0.1*dl); }
   scene.background = skyColor; scene.fog.color.copy(skyColor);
   scene.fog.near = lerp(150, 35, rl); scene.fog.far = lerp(S.settings.gfx === 'high' ? 750 : 520, 220, rl);
@@ -921,6 +1098,14 @@ function updateEnvironment(dt){
   }
   // signals
   const OFF = [0x3a0d0d,0x3a2a0a,0x0d3a18], ON = [0xff2a1a,0xffb000,0x2bff6a];
+  if (W.sigTimer) [0,1].forEach(g => ['NS','EW'].forEach((ax,k) => {
+    const sl = signalPhase(g, ax), tm = W.sigTimer[g][k], key = sl.st + sl.left;
+    if (tm.last === key) return; tm.last = key;
+    const x = tm.c.getContext('2d'); x.fillStyle = '#050505'; x.fillRect(0,0,128,88);
+    x.fillStyle = sl.st === 'G' ? '#2bff6a' : sl.st === 'Y' ? '#ffb000' : '#ff2a1a';
+    x.font = '700 70px "Share Tech Mono",monospace'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(sl.left).padStart(2,'0'), 64, 47);
+    tm.tex.needsUpdate = true;
+  }));
   [0,1].forEach(g => ['NS','EW'].forEach((ax,k) => { const t = (simT + g*15) % 30; let st; if (ax === 'NS') st = t<12?'G':t<15?'Y':'R'; else st = t<15?'R':t<27?'G':'Y'; const on = st==='R'?0:st==='Y'?1:2; W.sigLamp[g][k].forEach((m,ci) => m.color.setHex(ci===on ? ON[ci] : OFF[ci])); }));
   W.cams.forEach(c => c.led.material.color.setHex(Math.floor(simT*2)%2 ? 0xff0000 : 0x330000));
   setRainSound(rl > 0.05 ? (INTERIOR ? 0.04 : 0.05 + rl*0.15) : 0);
@@ -1091,21 +1276,31 @@ function updateHUD(dt){
   const road = INTERIOR ? null : W.roadAt(M.x, M.z, M.h);
   $('roadEn').textContent = INTERIOR ? INTERIOR.poi.en : road ? road.name[0] : W.city.en;
   $('roadNt').textContent = INTERIOR ? INTERIOR.poi.nt : road ? road.name[1] : W.city.nt;
+  const ns = nextSignalAhead(), sp = $('sigPill');
+  if (ns) { sp.classList.remove('hidden'); sp.className = 'glass sig ' + ns.st; sp.innerHTML = '<i></i><b>' + ns.left + 's</b><span>' + ({G:'Green',Y:'Amber',R:'Red'}[ns.st]) + ' · ' + ns.dist + ' m</span>'; }
+  else sp.classList.add('hidden');
   // meter
   const nightNow = isNight();
   $('nightTag').classList.toggle('hidden', !nightNow);
   let flag = 'VACANT', fare = '---', km = '0.0', tt = '0:00', sub = '';
   if (onFoot) { flag = INTERIOR ? 'INSIDE' : 'ON FOOT'; sub = INTERIOR ? 'Walk to the door to leave' : 'Hold GO to run · walk back to your ' + P.def.name; }
+  else if (W.highway && RIDER && RIDER.inter) { flag = 'HIRED'; const left = Math.max(0, Math.round((W.len - P.z)/W.len*W.realKm)); fare = String(Math.round(interFare(RIDER) * (nightNow ? 1.5 : 1))); km = String(left); sub = '🧳 ' + RIDER.name + ' → ' + RIDER.destCity.en + ' · ' + left + ' km left'; }
+  else if (W.highway) { flag = 'HIGHWAY'; const left = Math.max(0, Math.round((W.len - P.z)/W.len*W.realKm)); fare = String(left); km = W.nh.split(' ')[1]; sub = W.nh + ' to ' + W.to.en + ' · ' + left + ' km left'; }
   else if (cat === 'auto' || cat === 'taxi') {
-    if (RIDER) { const k = RIDER.metered*DIST_SCALE/1000; const minKm = cat==='taxi'?2:1.5; let f = Math.round(Math.max(P.def.base, P.def.base + (k-minKm)*P.def.perKm)); if (nightNow) f = Math.round(f*1.5);
+    if (RIDER && RIDER.inter) { flag = 'HIRED'; fare = String(Math.round(interFare(RIDER) * (nightNow ? 1.5 : 1))); km = String(RIDER.km); sub = '🧳 ' + RIDER.name + ' → ' + RIDER.destCity.en + (RIDER.dest.stop ? ' bus stand' : ' · take the highway'); }
+    else if (RIDER) { const k = RIDER.metered*DIST_SCALE/1000; const minKm = cat==='taxi'?2:1.5; let f = Math.round(Math.max(P.def.base, P.def.base + (k-minKm)*P.def.perKm)); if (nightNow) f = Math.round(f*1.5);
       flag = 'HIRED'; fare = String(f); km = k.toFixed(1); const el = Math.floor((S.min - RIDER.startMin + 1440) % 1440); tt = Math.floor(el/60) + ':' + String(el%60).padStart(2,'0'); sub = '→ ' + RIDER.dest.en; }
     else sub = WAITING.length ? 'Ride request: ' + WAITING[0].name + ' · follow the GPS' : 'Looking for passengers…';
   } else if (cat === 'bus') { flag = 'ON ROUTE'; fare = BUS ? String(BUS.onboard) : '0'; km = String(P.def.seats); sub = BUS ? 'Next stop: ' + BUS.stops[BUS.next].name : ''; }
   else { flag = 'PRIVATE'; sub = 'Personal car · no fares'; }
+  $('limit').textContent = speedLimit();
   $('flagTxt').textContent = flag; $('flag').className = 'led ' + (RIDER || cat === 'bus' ? 'hired' : 'vac');
   $('fare').textContent = fare; $('kmTxt').textContent = km; $('tripT').textContent = tt; $('fareSub').textContent = sub;
-  $('meter').querySelector('.mgrid small').textContent = cat === 'bus' ? 'ON BOARD' : 'FARE ₹';
-  $('meter').querySelectorAll('.mgrid small')[1].textContent = cat === 'bus' ? 'SEATS' : 'KM';
+  const lbl = $('meter').querySelectorAll('.mgrid small');
+  lbl[0].textContent = W.highway ? 'KM LEFT' : cat === 'bus' ? 'ON BOARD' : 'FARE ₹';
+  lbl[1].textContent = W.highway ? 'NH' : cat === 'bus' ? 'SEATS' : 'KM';
+  lbl[2].textContent = W.highway ? 'MIN' : 'TIME';
+  if (W.highway) $('tripT').textContent = String(Math.max(1, Math.round((W.len - P.z) / Math.max(12, Math.abs(P.v)) / 60)));
   // festival banner (shown for a few seconds after each city load / day change)
   if (festToday && BANNER.t > 0) { $('banner').classList.remove('hidden'); $('banTag').textContent = 'TODAY · ' + festToday.info.en.toUpperCase(); $('banNt').textContent = festToday.info.nt; $('banEn').textContent = 'Procession around ' + festToday.poi.en + ' from 4 PM. Expect road blocks.'; }
   else $('banner').classList.add('hidden');
@@ -1126,7 +1321,7 @@ function drawSpeedo(){
   x.fillStyle = 'rgba(14,22,30,.82)'; x.beginPath(); x.arc(c,c,r+16,0,7); x.fill();
   x.strokeStyle = 'rgba(244,208,63,.65)'; x.lineWidth = 3; x.beginPath(); x.arc(c,c,r+15,0,7); x.stroke();
   // limit zone
-  x.strokeStyle = 'rgba(229,57,53,.85)'; x.lineWidth = 10; x.beginPath(); x.arc(c,c,r-2,ang(SPEED_LIMIT),a1); x.stroke();
+  x.strokeStyle = 'rgba(229,57,53,.85)'; x.lineWidth = 10; x.beginPath(); x.arc(c,c,r-2,ang(speedLimit()),a1); x.stroke();
   x.fillStyle = '#f6efd9'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 ' + Math.round(w*0.065) + 'px "Baloo Chettan 2",sans-serif';
   for (let v = 0; v <= max + 0.1; v += step/2) {
     const a = ang(v), major = Math.abs(v/step - Math.round(v/step)) < 0.01;
@@ -1137,7 +1332,7 @@ function drawSpeedo(){
   const a = ang(kmh);
   x.strokeStyle = '#ff8a3d'; x.lineWidth = 6; x.lineCap = 'round'; x.beginPath(); x.moveTo(c - Math.cos(a)*16, c - Math.sin(a)*16); x.lineTo(c + Math.cos(a)*(r-14), c + Math.sin(a)*(r-14)); x.stroke();
   x.fillStyle = '#ddd'; x.beginPath(); x.arc(c,c,13,0,7); x.fill();
-  x.fillStyle = kmh > SPEED_LIMIT ? '#ff6b5a' : '#fff'; x.font = '800 ' + Math.round(w*0.15) + 'px "Share Tech Mono",monospace'; x.fillText(Math.round(kmh), c, c + r*0.55);
+  x.fillStyle = kmh > speedLimit() ? '#ff6b5a' : '#fff'; x.font = '800 ' + Math.round(w*0.15) + 'px "Share Tech Mono",monospace'; x.fillText(Math.round(kmh), c, c + r*0.55);
   x.fillStyle = 'rgba(246,239,217,.7)'; x.font = '700 ' + Math.round(w*0.06) + 'px sans-serif'; x.fillText('km/h', c, c + r*0.82);
 }
 function renderPhone(){
@@ -1145,15 +1340,37 @@ function renderPhone(){
   const note = $('phoneNote'); if (PHONE.noteT > 0) { note.textContent = PHONE.note; note.classList.remove('hidden'); } else note.classList.add('hidden');
   const b = $('phoneBody'), tab = PHONE.tab, cat = P.def.cat;
   let h = '', mini = '';
-  if (tab === 'ride') {
+  if (tab === 'ride' && W.highway) {
+    const left = Math.max(0, Math.round((W.len - P.z)/W.len*W.realKm)), nx = W.exits.find(e => e.z > P.z);
+    const eta = Math.max(1, Math.round((W.len - P.z) / Math.max(12, Math.abs(P.v)) / 60));
+    h = '<span class="pill trip">' + W.nh + '</span><div class="big" style="font-size:20px">To ' + escapeHtml(W.to.en) + '</div><p class="n">' + escapeHtml(W.to.nt) + '</p>' +
+      '<div class="stat"><b>' + left + ' km left</b><span>About ' + eta + ' min at this speed</span></div>' +
+      (nx ? '<div class="stat"><b>Next exit: ' + escapeHtml(nx.c.en) + '</b><span>Keep left near the green EXIT sign, then tap Exit</span></div>' : '') +
+      '<div class="stat"><span>Petrol pumps along the way repair your vehicle. Highway limit 100 km/h.</span></div>';
+    if (RIDER && RIDER.inter) h = '<div class="stat"><b>🧳 ' + escapeHtml(RIDER.name) + ' → ' + escapeHtml(RIDER.destCity.en) + '</b><span>Fare about ' + money(interFare(RIDER)) + '</span></div>' + h;
+    mini = '🛣 ' + W.nh + ' · ' + left + ' km to ' + W.to.en;
+  } else if (tab === 'ride') {
     if (onFoot && !RIDER) h = '<p>You\'re on foot. Walk back to your ' + escapeHtml(P.def.name) + ' to take rides.</p>';
     else if (cat === 'car') h = '<p><b>Private car</b></p><p class="small">Ride requests only come in autos and taxis. Buses run routes. Switch vehicles at a showroom or in My vehicles.</p>';
     else if (cat === 'bus' && BUS) { const st = BUS.stops[BUS.next]; h = '<span class="pill trip">BUS ROUTE</span><div class="stat"><b>Next stop: ' + escapeHtml(st.name) + '</b><span>' + (ROUTE ? Math.round(ROUTE.len) + ' m away' : '') + ' · ' + BUS.onboard + '/' + P.def.seats + ' on board</span></div><div class="stat"><b>₹' + P.def.ticket + ' per ticket</b><span>Route bonus ₹100 · ' + BUS.loops + ' loops done</span></div>'; mini = '🚌 ' + st.name; }
+    else if (RIDER && RIDER.inter && !RIDER.dest.stop) {
+      h = '<div class="rq"><div class="av" style="background:#8e44ad">' + RIDER.name[0] + '</div><div><span class="pill trip">ON TRIP</span><div class="nm">' + escapeHtml(RIDER.name) + '</div><div class="meta">' + RIDER.rating + ' ★ · ' + RIDER.pay + '</div></div><div class="dist"><b>' + RIDER.km + '</b><small>km trip</small></div></div>' +
+        '<div class="stat"><b>Going to ' + escapeHtml(RIDER.destCity.en) + '</b><span>' + escapeHtml(RIDER.destCity.nt) + '</span></div>' +
+        '<div class="stat"><span>' + (W.highway ? 'Stay on the highway. You\'ll drop them at the bus stand when you arrive.' : 'Tap "Start trip" (when stopped) or open the 🗺 map → Drive on the highway.') + '</span></div>';
+      mini = '🧳 ' + RIDER.name + ' → ' + RIDER.destCity.en;
+    }
     else if (RIDER) {
       const dist = ROUTE ? Math.round(ROUTE.len) : 0;
       h = '<div class="rq"><div class="av">' + RIDER.name[0] + '</div><div><span class="pill trip">ON TRIP</span><div class="nm">' + escapeHtml(RIDER.name) + '</div><div class="meta">' + RIDER.rating + ' ★ · ' + RIDER.pay + (RIDER.hurry ? ' · In a hurry!' : '') + '</div></div><div class="dist"><b>' + dist + '</b><small>m to go</small></div></div>' +
           '<div class="stat"><b>Drop at ' + escapeHtml(RIDER.dest.en) + '</b><span>' + escapeHtml(RIDER.dest.nt) + '</span></div><div class="stat"><span>Follow the teal line on your GPS and stop at the marker.' + (isNight() ? ' Night fare +50% is on.' : '') + '</span></div>';
       mini = '🧍 ' + RIDER.name + ' → ' + RIDER.dest.en + ' · ' + dist + ' m';
+    } else if (WAITING.length && WAITING[0].inter) {
+      const w = WAITING[0], dist = ROUTE ? Math.round(ROUTE.len) : Math.round(Math.hypot(w.x-P.x, w.z-P.z));
+      const est = Math.round(P.def.base + w.km * P.def.perKm);
+      h = '<div class="rq"><div class="av" style="background:#8e44ad">' + w.name[0] + '</div><div><span class="pill" style="background:#bf5af2;color:#fff">LONG-DISTANCE</span><div class="nm">' + escapeHtml(w.name) + '</div><div class="meta">' + w.rating + ' ★ · ' + w.pay + '</div></div><div class="dist"><b>' + dist + '</b><small>m away</small></div></div>' +
+          '<div class="stat"><b>' + escapeHtml(W.city.en) + ' → ' + escapeHtml(w.destCity.en) + '</b><span>' + escapeHtml(w.destCity.nt) + ' · ' + w.km + ' km by road</span></div>' +
+          '<div class="stat"><b>Fare about ' + money(est) + '</b><span>Plus a bigger tip for a smooth ride. Follow the purple line to pick them up.</span></div>';
+      mini = '🧳 ' + w.name + ' → ' + w.destCity.en + ' · ' + money(est);
     } else if (WAITING.length) {
       const w = WAITING[0], dist = ROUTE ? Math.round(ROUTE.len) : Math.round(Math.hypot(w.x-P.x, w.z-P.z));
       h = '<div class="rq"><div class="av">' + w.name[0] + '</div><div><span class="pill">PICKUP</span><div class="nm">' + escapeHtml(w.name) + '</div><div class="meta">' + w.rating + ' ★ · ' + w.pay + (w.hurry ? ' · In a hurry' : '') + '</div></div><div class="dist"><b>' + dist + '</b><small>m away</small></div></div>' +
@@ -1199,7 +1416,10 @@ function updateAction(){
     else if (sh) ACTION = {label:'Enter ' + PLACE_TYPES[sh.type].en, f:() => openShowroom(PLACE_TYPES[sh.type].shop)};
     fb.textContent = '🚗'; fb.title = 'Get in (F)'; fb.classList.toggle('hidden', !nearOwnVehicle());
   } else {
-    if (Math.abs(P.v) < 2.5 && !wanted) {
+    const ex = nearExit();
+    if (RIDER && RIDER.inter && !W.highway && W.city.id !== RIDER.destCity.id && Math.abs(P.v) < 2.5) ACTION = {label:'🛣 Start trip to ' + RIDER.destCity.en, f:() => startHighway(RIDER.destCity.id)};
+    else if (ex) ACTION = {label:'↖ Exit to ' + ex.c.en, f:() => arriveFromHighway(ex.c)};
+    else if (Math.abs(P.v) < 2.5 && !wanted) {
       const sh = nearPOI(SHOP_TYPES, 11), pt = nearPOI(['petrol'], 12), holy = nearPOI(['temple','church','mosque','museum'], 10), rto = nearPOI(['rto'], 11), tea = nearPOI(['tea'], 10);
       if (sh) ACTION = {label:'Enter ' + PLACE_TYPES[sh.type].en, f:() => openShowroom(PLACE_TYPES[sh.type].shop)};
       else if (rto) ACTION = {label:'RTO: licences & papers', f:openRTO};
@@ -1219,6 +1439,22 @@ function drawGPS(){
   x.clearRect(0,0,w,w);
   x.save(); x.beginPath(); x.arc(c,c,R,0,7); x.clip();
   x.fillStyle = '#1b2a22'; x.fillRect(0,0,w,w);
+  if (W.highway) {
+    const range = 260, k = R/range, toS = (px, pz) => [c + px*k*0.8, c - (pz - M.z)*k];
+    x.fillStyle = W.city.st === 'KL' ? '#3d6b2c' : '#6b6a3a'; x.fillRect(0,0,w,w);
+    x.fillStyle = '#45464b'; x.fillRect(c - 10.6*k*0.8, 0, 21.2*k*0.8, w);
+    x.strokeStyle = '#19c3b8'; x.lineWidth = 10; x.beginPath(); x.moveTo(c + 4.5*k*0.8, c); x.lineTo(c + 4.5*k*0.8, 0); x.stroke();
+    x.font = '700 17px "Baloo Chettan 2",sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle';
+    W.exits.forEach(e => { const [, sy] = toS(0, e.z); if (sy < -20 || sy > w+20) return; x.fillStyle = '#0d6b3a'; x.fillRect(c + 9*k*0.8, sy - 4, 40, 8); x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText('EXIT ' + e.c.en, c + 18, sy - 14); x.fillStyle = '#fff'; x.fillText('EXIT ' + e.c.en, c + 18, sy - 14); });
+    W.pois.forEach(p => { const [, sy] = toS(0, p.z); if (sy < -10 || sy > w+10) return; x.fillStyle = '#d35400'; x.beginPath(); x.arc(c + 22*k*0.8, sy, 8, 0, 7); x.fill(); x.fillStyle = '#fff'; x.fillText('⛽', c + 22*k*0.8 - 8, sy); });
+    if (W.border) { const [, sy] = toS(0, W.border.z); if (sy > 0 && sy < w) { x.strokeStyle = '#ffd400'; x.setLineDash([10,8]); x.lineWidth = 4; x.beginPath(); x.moveTo(0, sy); x.lineTo(w, sy); x.stroke(); x.setLineDash([]); x.fillStyle = '#ffd400'; x.textAlign = 'center'; x.fillText(STATE_NAME[W.border.st].en.toUpperCase(), c, sy - 14); x.textAlign = 'left'; } }
+    POLICE.forEach(p => { const [sx, sy] = toS(p.x, p.z); x.fillStyle = Math.floor(simT*4)%2 ? '#ff3b30' : '#0a84ff'; x.beginPath(); x.arc(sx, sy, 7, 0, 7); x.fill(); });
+    x.save(); x.translate(c + P.x*k*0.8, c); x.fillStyle = '#ffd15c'; x.strokeStyle = '#3a2a00'; x.lineWidth = 3; x.beginPath(); x.moveTo(0,-20); x.lineTo(13,14); x.lineTo(0,7); x.lineTo(-13,14); x.closePath(); x.fill(); x.stroke(); x.restore();
+    x.restore();
+    x.strokeStyle = 'rgba(244,208,63,.85)'; x.lineWidth = 6; x.beginPath(); x.arc(c,c,R-2,0,7); x.stroke();
+    x.fillStyle = '#fff'; x.font = '800 22px sans-serif'; x.textAlign = 'center'; x.fillText(W.nh, c, w - 34);
+    return;
+  }
   if (INTERIOR) { x.fillStyle = '#4a235a'; x.fillRect(0,0,w,w); x.fillStyle = '#fff'; x.font = '800 36px sans-serif'; x.textAlign = 'center'; x.fillText('Inside', c, c+12); x.restore(); return; }
   const range = onFoot ? 120 : 240, k = R/range;            // pixels per metre
   const toS = (px, pz) => [c + (px - M.x)*k, c + (pz - M.z)*k];
@@ -1226,7 +1462,7 @@ function drawGPS(){
   x.globalAlpha = 0.95; x.drawImage(W.miniCanvas, mx0, my0, W.N*T*k, W.N*T*k); x.globalAlpha = 1;
   // route line
   if (ROUTE) {
-    const col = RIDER ? '#19c3b8' : BUS ? '#3c8dff' : '#ff9f1c';
+    const col = RIDER ? '#19c3b8' : BUS ? '#3c8dff' : (WAITING[0] && WAITING[0].inter) ? '#bf5af2' : '#ff9f1c';
     x.lineJoin = 'round'; x.lineCap = 'round';
     [[14,'rgba(0,0,0,.55)'],[8,col]].forEach(([lw,cl]) => { x.strokeStyle = cl; x.lineWidth = lw; x.beginPath(); ROUTE.forEach((p,i) => { const [sx,sy] = toS(p.x,p.z); i ? x.lineTo(sx,sy) : x.moveTo(sx,sy); }); x.stroke(); });
     const end = ROUTE[ROUTE.length-1]; const [ex,ey] = toS(end.x,end.z);
@@ -1425,7 +1661,9 @@ function selectCity(c){
   const cost = Math.round(km * (P.def.cat === 'bus' ? 3 : P.def.cat === 'auto' ? 1 : 2));
   const hrs = (km / 55);
   card.innerHTML = '<h3>' + c.en + ' <span class="native">' + c.nt + '</span></h3><p class="small">' + c.dist + ' district · ' + (c.st === 'KL' ? 'Kerala' : 'Tamil Nadu') + (S.stats.cities.includes(c.id) ? ' · visited' : '') + '</p>' +
-    (c === cur ? '<p>You are here.</p>' : '<p>' + km + ' km by road · about ' + (hrs < 1 ? Math.round(hrs*60) + ' min' : hrs.toFixed(1) + ' h') + ' · fuel & tolls ' + money(cost) + '</p><button class="btn" id="goBtn">Drive to ' + c.en + '</button>');
+    (c === cur ? '<p>You are here.</p>' : '<p>' + km + ' km by road · about ' + (hrs < 1 ? Math.round(hrs*60) + ' min' : hrs.toFixed(1) + ' h') + ' · fuel & tolls ' + money(cost) + '</p><div class="row" style="justify-content:flex-start"><button class="btn" id="hwBtn">🛣 Drive on the highway</button><button class="btn ghost" id="goBtn">⚡ Quick travel</button></div><p class="small">Highway trips are shortened so they take a few minutes.</p>');
+  const hb = $('hwBtn');
+  if (hb) hb.onclick = () => { const pay = Math.min(Math.round(cost*0.6), Math.max(0, S.money)); S.money -= pay; $('mapScreen').classList.add('hidden'); if (onFoot) { if (INTERIOR) leaveBuilding(); getIn(); } startHighway(c.id); setPaused(false); };
   const gb = $('goBtn');
   if (gb) gb.onclick = () => {
     const pay = Math.min(cost, Math.max(0, S.money));
@@ -1452,9 +1690,9 @@ function frame(now){
     if (S.min >= 1440) { S.min -= 1440; S.day++; setupDay(); S.today = {day:S.day, earned:0, fines:0, trips:0, night:0}; toast('A new day: Day ' + S.day, 'info'); persist(); }
     if (Math.floor(before) % 1440 < 1320 && Math.floor(S.min) % 1440 >= 1320) { toast('🌙 Night fares: +50% until 4 AM', 'good'); phoneNote('Night fares active: +50% until 4 AM'); }
     if (onFoot) stepFoot(dt); else stepPlayer(dt);
-    updateWeather(dt); updateChecks(dt); updateRoute(dt);
+    updateWeather(dt); updateChecks(dt); updateRoute(dt); updateHighway(dt);
     if (PHONE.noteT > 0) PHONE.noteT -= dt;
-    updateTraffic(dt); updatePeds(dt); updateAnimals(dt); updatePolice(dt);
+    updateTraffic(dt); updateTrains(dt); updatePeds(dt); updateAnimals(dt); updatePolice(dt);
     if (!onFoot) updateJobs(dt); else { $('prompt').textContent = ''; destBeam.visible = !!RIDER; }
     updateProcession(dt); updateDebris(dt);
     autosave += dt; if (autosave > 30) { autosave = 0; persist(); }
