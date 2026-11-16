@@ -88,6 +88,8 @@ hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
 .spRow{display:flex;align-items:flex-end;gap:6px}
 #speedoC{width:180px;height:180px}
 #limit{width:46px;height:46px;border-radius:50%;border:6px solid #e53935;background:#fff;color:#111;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;margin-bottom:8px;box-shadow:0 3px 10px rgba(0,0,0,.4)}
+#sigPill{padding:3px 10px;display:flex;align-items:center;gap:7px;font-size:12px}#sigPill i{width:14px;height:14px;border-radius:50%;display:inline-block;box-shadow:0 0 8px currentColor}#sigPill b{font-family:'Share Tech Mono',monospace;font-size:18px}
+#sigPill.G i{background:#2bff6a;color:#2bff6a}#sigPill.Y i{background:#ffb000;color:#ffb000}#sigPill.R i{background:#ff2a1a;color:#ff2a1a}#sigPill.G b{color:#2bff6a}#sigPill.Y b{color:#ffb000}#sigPill.R b{color:#ff4d3a}
 #roadPill{padding:3px 12px;display:flex;flex-direction:column;line-height:1.15}#roadPill b{font-size:14px}#roadPill span{font-size:12px;color:#f4d03f}
 #meter{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);padding:6px 12px;min-width:270px;background:rgba(10,10,10,.82)}
 .mtop{display:flex;align-items:center;gap:8px;font-weight:800;font-size:12px;letter-spacing:1.5px}
@@ -223,6 +225,7 @@ body.touch #toasts{top:70px}
     </div>
   </div>
   <div id="speedWrap">
+    <div id="sigPill" class="glass sig hidden"></div>
     <div id="roadPill" class="glass"><b id="roadEn"></b><span id="roadNt"></span></div>
     <div class="spRow"><canvas id="speedoC" width="360" height="360"></canvas><div id="limit">50</div></div>
   </div>
@@ -305,6 +308,7 @@ body.touch #toasts{top:70px}
 <script src="js/interiors.js"></script>
 <script src="js/data2.js"></script>
 <script src="js/systems.js"></script>
+<script src="js/highway.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

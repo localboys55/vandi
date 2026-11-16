@@ -1,6 +1,6 @@
 // Vandi service worker: works offline after the first visit
-const VERSION = 'vandi-v7';
-const CORE = ['./', './index.html', './manifest.webmanifest', './js/three.min.js', './js/data.js', './js/models.js', './js/world.js', './js/interiors.js', './js/data2.js', './js/systems.js', './js/game.js', './icons/icon-192.png', './icons/icon-512.png',
+const VERSION = 'vandi-v9';
+const CORE = ['./', './index.html', './manifest.webmanifest', './js/three.min.js', './js/data.js', './js/models.js', './js/world.js', './js/interiors.js', './js/data2.js', './js/systems.js', './js/highway.js', './js/game.js', './icons/icon-192.png', './icons/icon-512.png',
   './fonts/baloo-chettan-2-latin-600-normal.woff2','./fonts/baloo-chettan-2-latin-700-normal.woff2','./fonts/baloo-chettan-2-latin-800-normal.woff2',
   './fonts/baloo-chettan-2-malayalam-600-normal.woff2','./fonts/baloo-chettan-2-malayalam-700-normal.woff2','./fonts/baloo-chettan-2-malayalam-800-normal.woff2',
   './fonts/baloo-thambi-2-tamil-600-normal.woff2','./fonts/baloo-thambi-2-tamil-700-normal.woff2','./fonts/baloo-thambi-2-tamil-800-normal.woff2'];
