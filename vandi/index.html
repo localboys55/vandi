@@ -123,9 +123,10 @@ hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
 .big{font-size:26px;font-weight:800;color:#0f3b2e}
 #phoneMini{display:none;position:absolute;right:max(12px,env(safe-area-inset-right));padding:6px 10px;font:inherit;font-size:12px;max-width:220px;text-align:left}
 #bubbles{position:absolute;inset:0;overflow:hidden}
+#fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .25s;z-index:40}#fade.on{opacity:1}
 .sb{position:absolute;transform:translate(-50%,-100%);background:#fff;border:3px solid #e74c3c;border-radius:14px;padding:4px 11px;font-weight:800;font-size:15px;white-space:nowrap;color:#222;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:"Baloo Chettan 2","Baloo Thambi 2",sans-serif}
 .sb:after{content:"";position:absolute;left:50%;bottom:-11px;margin-left:-8px;border:8px solid transparent;border-top-color:inherit;border-bottom:0}
-.sb.angry,.sb.crash,.sb.cow,.sb.dog,.sb.hurt{border-color:#e74c3c;animation:shake .35s 2}.sb.hurt{background:#fff0ee}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}
+.sb.angry,.sb.crash,.sb.cow,.sb.dog,.sb.hurt{border-color:#e74c3c;animation:shake .35s 2}.sb.hurt{background:#fff0ee}.sb.police,.sb.check{border-color:#1f3a93;background:#eaf0ff}.sb.horn{border-color:#f39c12}.sb.excuse{border-color:#c9a227}.sb.chase{border-color:#8e44ad}.sb.rider,.sb.riderCrash,.sb.riderSpeed,.sb.riderGun{border-color:#ff7a00;background:#fff6e8;animation:shake .35s 2}.sb.rider::before,.sb.riderCrash::before,.sb.riderSpeed::before,.sb.riderGun::before{content:'🧍 ';}
 @keyframes shake{25%{margin-left:-3px}75%{margin-left:3px}}
 #toasts{position:absolute;top:110px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;width:min(60vw,460px)}
 .toast{padding:7px 14px;border-radius:10px;font-weight:700;font-size:14px;background:rgba(246,239,217,.96);border:2px solid var(--gold);transition:opacity .4s,transform .4s;text-align:center}
@@ -137,6 +138,8 @@ hr{border:none;border-top:2px dashed #d8c88c;margin:14px 0}
 #actBtn{position:absolute;left:50%;bottom:220px;transform:translateX(-50%);font-size:17px}
 #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
 #flash.go{animation:fl .35s}
+#crack{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,0) 0 18%,rgba(255,255,255,.25) 19%,rgba(255,255,255,0) 21%,rgba(255,255,255,0) 34%,rgba(255,255,255,.18) 35%,rgba(255,255,255,0) 37%),repeating-conic-gradient(from 10deg at 50% 45%,rgba(255,255,255,.22) 0 1deg,rgba(255,255,255,0) 1deg 24deg)}
+#crack.go{animation:crk .6s}@keyframes crk{0%{opacity:.9}100%{opacity:0}}
 @keyframes fl{0%{opacity:.85}100%{opacity:0}}
 .checklist{display:flex;flex-direction:column;gap:4px;margin:8px 0}.ck{padding:6px 10px;border-radius:10px;background:#fffaf0;border:1.5px solid #e6d9a8}.ck.bad{border-color:#e74c3c;background:#fff0ee}
 @media (max-height:820px){
@@ -247,7 +250,9 @@ body.touch #toasts{top:70px}
   <div id="prompt"></div>
   <div id="bubble" class="glass hidden"><b id="bName"></b><span id="bText"></span><span id="bEng"></span></div>
   <button id="actBtn" class="btn hidden"></button>
-  <div id="flash"></div>
+  <div id="fade"></div>
+  <div id="crack"></div>
+<div id="flash"></div>
   <div id="touch">
     <div class="tl"><button class="steer" data-k="left">◀</button><button class="steer" data-k="right">▶</button></div>
     <div class="tr"><button class="horn" data-k="horn">📯</button><button class="brake" data-k="brake">BRAKE</button><button class="gas" data-k="gas">GO</button></div>
